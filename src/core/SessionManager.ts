@@ -319,7 +319,7 @@ export class SessionManager {
 
 	private formatEntityNote(entity: ExtractedEntity, sessionDate: string): string {
 		const t = getTranslations();
-		const entityTypeLabel = {
+		const entityTypeLabel: Record<string, string> = {
 			person: 'person',
 			project: 'project',
 			company: 'company',
@@ -327,9 +327,12 @@ export class SessionManager {
 			other: 'other',
 		};
 
+		// Use fallback 'other' if entity type is not recognized
+		const typeLabel = entityTypeLabel[entity.type] || 'other';
+
 		return `---
 type: entity
-entity_type: ${entityTypeLabel[entity.type]}
+entity_type: ${typeLabel}
 ---
 
 # ${entity.name}

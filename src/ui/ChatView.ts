@@ -502,7 +502,8 @@ export class ChatView extends ItemView {
 		}
 
 		// Update content using local reference (safe even if view closes)
-		const contentEl = streamingEl.querySelector('.reflection-chat-message-content');
+		// Use optional chaining for extra safety in case streamingEl is somehow invalid
+		const contentEl = streamingEl?.querySelector('.reflection-chat-message-content');
 		if (contentEl) {
 			contentEl.textContent = content;
 
@@ -859,16 +860,18 @@ export class ChatView extends ItemView {
 		}
 
 		// Validate each message in the array
-		const validMessages = obj.messages.filter(
-			(msg): msg is Message =>
-				typeof msg === 'object' &&
-				msg !== null &&
-				typeof (msg as Record<string, unknown>).id === 'string' &&
-				typeof (msg as Record<string, unknown>).content === 'string' &&
-				((msg as Record<string, unknown>).role === 'user' ||
-					(msg as Record<string, unknown>).role === 'assistant') &&
-				typeof (msg as Record<string, unknown>).timestamp === 'number'
-		);
+		const validMessages = obj.messages.filter((msg): msg is Message => {
+			if (typeof msg !== 'object' || msg === null) return false;
+			const record = msg as Record<string, unknown>;
+			const content = record.content;
+			return (
+				typeof record.id === 'string' &&
+				typeof content === 'string' &&
+				content.length <= ChatView.MAX_MESSAGE_LENGTH &&
+				(record.role === 'user' || record.role === 'assistant') &&
+				typeof record.timestamp === 'number'
+			);
+		});
 
 		return { messages: validMessages };
 	}

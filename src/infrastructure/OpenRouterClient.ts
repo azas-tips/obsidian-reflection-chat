@@ -96,7 +96,9 @@ export class OpenRouterClient {
 					throw new ApiError('Invalid API response: missing choices array', 500);
 				}
 
-				const content = data.choices[0]?.message?.content || '';
+				// Ensure content is a string (API could return other types)
+				const rawContent = data.choices[0]?.message?.content;
+				const content = typeof rawContent === 'string' ? rawContent : '';
 
 				// Validate response length to prevent memory issues
 				if (content.length > OpenRouterClient.MAX_RESPONSE_LENGTH) {

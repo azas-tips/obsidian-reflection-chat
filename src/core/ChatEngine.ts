@@ -72,6 +72,20 @@ export class ChatEngine {
 	async generateSummary(messages: Message[]): Promise<SessionSummary> {
 		const t = getTranslations();
 
+		// Return fallback summary for empty messages to avoid wasting API calls
+		if (!messages || messages.length === 0) {
+			return {
+				summary: t.errors.summaryFallback,
+				tags: [],
+				category: 'life',
+				decisions: [],
+				insights: [],
+				entities: [],
+				relations: [],
+				values: [],
+			};
+		}
+
 		const conversationText = messages
 			.map((m) => `${m.role === 'user' ? t.ui.userLabel : t.ui.botLabel}: ${m.content}`)
 			.join('\n\n');

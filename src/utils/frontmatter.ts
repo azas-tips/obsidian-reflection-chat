@@ -45,14 +45,21 @@ export function getFrontmatterStringArray(
 
 // Maximum number of items in an inline array to prevent DoS
 const MAX_INLINE_ARRAY_ITEMS = 100;
+// Maximum characters to parse in an inline array to prevent performance issues
+const MAX_INLINE_ARRAY_LENGTH = 10000;
 
 /**
  * Parse an inline array value, handling quoted strings with commas
  * e.g., [item1, "item, with comma", item3]
  * Handles edge cases like unclosed quotes gracefully
- * Limits array size to prevent DoS from malformed content
+ * Limits array size and input length to prevent DoS from malformed content
  */
 function parseInlineArray(value: string): string[] {
+	// Limit input size to prevent performance issues with very long strings
+	if (value.length > MAX_INLINE_ARRAY_LENGTH) {
+		return [];
+	}
+
 	const items: string[] = [];
 	let current = '';
 	let inQuotes = false;
