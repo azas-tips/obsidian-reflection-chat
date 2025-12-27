@@ -14,6 +14,7 @@ export class NoteIndexer {
 	private static readonly DEBOUNCE_MS = 1000;
 	private static readonly MAX_SUMMARY_LENGTH = 500;
 	private static readonly MAX_PENDING_UPDATES = 50; // Prevent memory leaks from rapid file changes
+	private static readonly MAX_RETRY_COUNT = 3; // Maximum retry attempts for dropped files
 
 	private app: App;
 	private embedder: Embedder;
@@ -25,7 +26,7 @@ export class NoteIndexer {
 	private isInitialized = false; // Prevent duplicate initialization
 	private pendingUpdates: Map<string, NodeJS.Timeout> = new Map();
 	private indexingPaths: Set<string> = new Set(); // Track files currently being indexed
-	private droppedFiles: Set<string> = new Set(); // Track files dropped from queue for retry
+	private droppedFiles: Map<string, number> = new Map(); // Track files dropped from queue with retry count
 	private eventRefs: EventRef[] = [];
 
 	constructor(
@@ -43,8 +44,22 @@ export class NoteIndexer {
 	}
 
 	updateSettings(journalFolder: string, entitiesFolder: string): void {
+		const foldersChanged =
+			this.journalFolder !== journalFolder || this.entitiesFolder !== entitiesFolder;
+
 		this.journalFolder = journalFolder;
 		this.entitiesFolder = entitiesFolder;
+
+		// Clear stale tracking data when folders change to prevent memory leaks
+		if (foldersChanged) {
+			// Clear pending timeouts for old folder paths
+			for (const timeout of this.pendingUpdates.values()) {
+				clearTimeout(timeout);
+			}
+			this.pendingUpdates.clear();
+			this.indexingPaths.clear();
+			this.droppedFiles.clear();
+		}
 	}
 
 	async initialize(): Promise<void> {
@@ -144,9 +159,16 @@ export class NoteIndexer {
 				const [droppedPath, droppedTimeout] = oldest;
 				clearTimeout(droppedTimeout);
 				this.pendingUpdates.delete(droppedPath);
-				// Track dropped file for retry when queue has capacity
-				this.droppedFiles.add(droppedPath);
-				logger.warn(`Dropped pending index update for ${droppedPath}, will retry later`);
+				// Track dropped file for retry when queue has capacity (increment retry count)
+				const currentRetries = this.droppedFiles.get(droppedPath) ?? 0;
+				if (currentRetries < NoteIndexer.MAX_RETRY_COUNT) {
+					this.droppedFiles.set(droppedPath, currentRetries + 1);
+					logger.warn(
+						`Dropped pending index update for ${droppedPath}, will retry later`
+					);
+				} else {
+					logger.error(`Max retries exceeded for ${droppedPath}, skipping`);
+				}
 			}
 		}
 
@@ -206,15 +228,18 @@ export class NoteIndexer {
 		const availableSlots = NoteIndexer.MAX_PENDING_UPDATES - this.pendingUpdates.size;
 		if (availableSlots <= 0) return;
 
-		// Take up to availableSlots files from dropped set
+		// Take up to availableSlots files from dropped map
 		const filesToRetry: string[] = [];
-		for (const path of this.droppedFiles) {
+		for (const path of this.droppedFiles.keys()) {
 			if (filesToRetry.length >= availableSlots) break;
 			filesToRetry.push(path);
 		}
 
 		// Schedule retry for each file
 		for (const path of filesToRetry) {
+			// Check again in case destroy() was called during iteration
+			if (this.isDestroyed) break;
+
 			this.droppedFiles.delete(path);
 			const file = this.app.vault.getAbstractFileByPath(path);
 			if (file instanceof ObsidianTFile && this.isTargetFile(file)) {

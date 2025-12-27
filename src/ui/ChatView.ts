@@ -290,17 +290,28 @@ export class ChatView extends ItemView {
 		// Clean up old event listeners before re-rendering
 		this.cleanupEventListeners();
 
-		// Re-render the view structure with new translations
-		this.onOpen();
+		try {
+			// Re-render the view structure with new translations
+			this.onOpen();
 
-		// Restore messages if any
-		if (this.messages.length > 0) {
-			this.renderMessages();
-		}
+			// Restore messages if any
+			if (this.messages.length > 0) {
+				this.renderMessages();
+			}
 
-		// Restore input value
-		if (this.inputEl && currentInput) {
-			this.inputEl.value = currentInput;
+			// Restore input value
+			if (this.inputEl && currentInput) {
+				this.inputEl.value = currentInput;
+			}
+		} catch (error) {
+			// If onOpen fails, try to recover by re-running it
+			logger.error('Failed to refresh UI:', error instanceof Error ? error : undefined);
+			try {
+				this.onOpen();
+			} catch {
+				// Critical failure - log and leave UI in partial state
+				logger.error('Critical: Failed to recover UI after refresh error');
+			}
 		}
 	}
 
@@ -544,9 +555,11 @@ export class ChatView extends ItemView {
 		}
 
 		// Cancel any ongoing streaming before starting new one
-		if (this.currentStreamingAbortController) {
-			this.currentStreamingAbortController.abort();
-			this.currentStreamingAbortController = null;
+		// Create new controller first to prevent gap where controller is null
+		const oldController = this.currentStreamingAbortController;
+		this.currentStreamingAbortController = new AbortController();
+		if (oldController) {
+			oldController.abort();
 		}
 
 		// Clear input
@@ -575,9 +588,8 @@ export class ChatView extends ItemView {
 			// Show related notes if any
 			this.showRelatedNotes(context);
 
-			// Stream response
+			// Stream response (AbortController already created at method start)
 			this.streamingContent = '';
-			this.currentStreamingAbortController = new AbortController();
 			await this.streamResponse(content, context);
 
 			// Notify user if content was truncated
@@ -598,8 +610,12 @@ export class ChatView extends ItemView {
 			// Don't show error for aborted requests
 			if (error instanceof Error && error.name === 'AbortError') {
 				logger.info('Streaming aborted by user');
-				// Clean up streaming UI on abort
-				this.finalizeStreamingMessage();
+				// Remove partial streaming content on abort to avoid inconsistent state
+				// (content visible in UI but not saved to history)
+				this.messagesContainer
+					?.querySelector('.reflection-chat-message.streaming')
+					?.remove();
+				this.currentStreamingElement = null;
 				return;
 			}
 			logger.error('Error sending message:', error instanceof Error ? error : undefined);
@@ -663,11 +679,12 @@ export class ChatView extends ItemView {
 					this.renderStreamingMessage(this.streamingContent);
 				}
 			} catch (renderError) {
-				// Log rendering errors but don't interrupt streaming
+				// Abort stream on rendering errors to avoid wasting resources
 				logger.error(
-					'Error rendering streaming message:',
+					'Error rendering streaming message, aborting stream:',
 					renderError instanceof Error ? renderError : undefined
 				);
+				abortController?.abort();
 			}
 		});
 	}
@@ -788,7 +805,7 @@ export class ChatView extends ItemView {
 			this.clearChat();
 		} catch (error) {
 			logger.error('Save error:', error instanceof Error ? error : undefined);
-			new Notice(t.notices.saveFailed + getErrorMessage(error));
+			new Notice(`${t.notices.saveFailed}: ${getErrorMessage(error)}`);
 		} finally {
 			this.isLoading = false;
 			this.updateSendButton();

@@ -153,33 +153,54 @@ export class SessionManager {
 	async createEntityNotes(entities: ExtractedEntity[], sessionDate: string): Promise<void> {
 		await this.ensureFolder(this.entitiesFolder);
 
-		const t = getTranslations();
+		// Process entities in parallel with error handling for each
+		const results = await Promise.allSettled(
+			entities.map((entity) => this.createOrUpdateEntityNote(entity, sessionDate))
+		);
 
-		for (const entity of entities) {
-			const safeName = sanitizeFileName(entity.name);
-			const fileName = `${safeName}.md`;
-			const filePath = `${this.entitiesFolder}/${fileName}`;
-			const existingFile = this.app.vault.getAbstractFileByPath(filePath);
-
-			if (existingFile instanceof TFile) {
-				// Append to existing entity note
-				const existingContent = await this.app.vault.read(existingFile);
-				const sessionLink = `- [[${sessionDate}]] - ${entity.context}`;
-
-				if (!existingContent.includes(sessionLink)) {
-					// Find the related sessions section and append
-					const updatedContent = this.appendToSection(
-						existingContent,
-						t.notes.relatedSessions,
-						sessionLink
-					);
-					await this.app.vault.modify(existingFile, updatedContent);
-				}
-			} else {
-				// Create new entity note
-				const content = this.formatEntityNote(entity, sessionDate);
-				await this.app.vault.create(filePath, content);
+		// Log any failures
+		for (let i = 0; i < results.length; i++) {
+			const result = results[i];
+			if (result.status === 'rejected') {
+				logger.error(
+					`Failed to create/update entity note for "${entities[i].name}":`,
+					result.reason instanceof Error ? result.reason : undefined
+				);
 			}
+		}
+	}
+
+	/**
+	 * Create or update a single entity note
+	 */
+	private async createOrUpdateEntityNote(
+		entity: ExtractedEntity,
+		sessionDate: string
+	): Promise<void> {
+		const t = getTranslations();
+		const safeName = sanitizeFileName(entity.name);
+		const fileName = `${safeName}.md`;
+		const filePath = `${this.entitiesFolder}/${fileName}`;
+		const existingFile = this.app.vault.getAbstractFileByPath(filePath);
+
+		if (existingFile instanceof TFile) {
+			// Append to existing entity note
+			const existingContent = await this.app.vault.read(existingFile);
+			const sessionLink = `- [[${sessionDate}]] - ${entity.context}`;
+
+			if (!existingContent.includes(sessionLink)) {
+				// Find the related sessions section and append
+				const updatedContent = this.appendToSection(
+					existingContent,
+					t.notes.relatedSessions,
+					sessionLink
+				);
+				await this.app.vault.modify(existingFile, updatedContent);
+			}
+		} else {
+			// Create new entity note
+			const content = this.formatEntityNote(entity, sessionDate);
+			await this.app.vault.create(filePath, content);
 		}
 	}
 
@@ -200,16 +221,19 @@ export class SessionManager {
 			'---',
 			`date: ${dateStr}`,
 			'type: session',
-			`category: ${summary.category}`,
+			`category: ${this.sanitizeYamlValue(summary.category)}`,
 			`tags: [${sanitizedTags.join(', ')}]`,
 			`entities: [${sanitizedEntities.join(', ')}]`,
 		];
 
-		// Add model info if provided
+		// Add model info if provided (sanitize model IDs as they may contain special chars)
 		if (modelInfo) {
-			frontmatterLines.push(`chat_model: ${modelInfo.chatModel}`);
-			frontmatterLines.push(`summary_model: ${modelInfo.summaryModel}`);
-			frontmatterLines.push(`embedding_model: ${modelInfo.embeddingModel}`);
+			const chatModel = this.sanitizeYamlValue(modelInfo.chatModel);
+			const summaryModel = this.sanitizeYamlValue(modelInfo.summaryModel);
+			const embeddingModel = this.sanitizeYamlValue(modelInfo.embeddingModel);
+			frontmatterLines.push(`chat_model: ${chatModel}`);
+			frontmatterLines.push(`summary_model: ${summaryModel}`);
+			frontmatterLines.push(`embedding_model: ${embeddingModel}`);
 		}
 
 		frontmatterLines.push('---');

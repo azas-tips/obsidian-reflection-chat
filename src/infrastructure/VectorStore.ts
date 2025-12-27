@@ -344,8 +344,17 @@ export class VectorStore {
 			}
 			try {
 				await this.app.vault.createFolder(path);
-			} catch {
-				// Folder might already exist
+			} catch (error) {
+				// Check if folder now exists (race condition with another create)
+				const existing = this.app.vault.getAbstractFileByPath(path);
+				if (!existing) {
+					// Folder still doesn't exist - this is a real error
+					logger.error(
+						`Failed to create directory ${path}:`,
+						error instanceof Error ? error : undefined
+					);
+				}
+				// If folder exists now, another process created it - that's fine
 			}
 		}
 	}
@@ -472,9 +481,9 @@ export class VectorStore {
 		}
 
 		// Validate vector dimensions to prevent storing invalid data
+		// Capture length before type guard to avoid unsafe type coercion in error path
+		const vectorLen = Array.isArray(vector) ? vector.length : 0;
 		if (!this.isValidVectorForUpsert(vector)) {
-			// Cast to unknown to get length for error message (type guard narrowed to never)
-			const vectorLen = (vector as unknown as unknown[] | undefined)?.length ?? 0;
 			throw new Error(
 				`Invalid vector: expected ${VectorStore.MIN_VECTOR_DIMENSION}-${VectorStore.MAX_VECTOR_DIMENSION} dimensions, got ${vectorLen}`
 			);

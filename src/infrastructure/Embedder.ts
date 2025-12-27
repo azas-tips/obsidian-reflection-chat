@@ -16,11 +16,19 @@ export class Embedder {
 	}
 
 	setApiKey(apiKey: string): void {
-		this.apiKey = apiKey;
+		if (this.apiKey !== apiKey) {
+			this.apiKey = apiKey;
+			// Reset initialized flag to require re-validation
+			this.initialized = false;
+		}
 	}
 
 	setModel(model: string): void {
-		this.model = model;
+		if (this.model !== model) {
+			this.model = model;
+			// Model change doesn't require re-initialization
+			// as the new model will be used on next embed call
+		}
 	}
 
 	private static readonly MIN_API_KEY_LENGTH = 20;
@@ -73,12 +81,12 @@ export class Embedder {
 		const timeoutId = setTimeout(() => controller.abort(), Embedder.EMBEDDING_TIMEOUT_MS);
 
 		try {
-			// Truncate text if too long
+			// Truncate text if too long (using safe truncation to avoid splitting multi-byte chars)
 			let truncatedText = text;
 			if (text.length > Embedder.MAX_EMBEDDING_CHARS) {
-				truncatedText = text.slice(0, Embedder.MAX_EMBEDDING_CHARS);
+				truncatedText = this.safeTruncate(text, Embedder.MAX_EMBEDDING_CHARS);
 				logger.warn(
-					`Text truncated for embedding: ${text.length} → ${Embedder.MAX_EMBEDDING_CHARS} chars`
+					`Text truncated for embedding: ${text.length} → ${truncatedText.length} chars`
 				);
 			}
 
@@ -104,9 +112,11 @@ export class Embedder {
 					const errorBody = await response.json();
 					// Only extract safe error fields
 					if (errorBody.error?.message) {
-						errorMessage = String(errorBody.error.message).slice(0, 200);
+						const rawMsg = String(errorBody.error.message).slice(0, 200);
+						errorMessage = this.redactSecrets(rawMsg);
 					} else if (errorBody.message) {
-						errorMessage = String(errorBody.message).slice(0, 200);
+						const rawMsg = String(errorBody.message).slice(0, 200);
+						errorMessage = this.redactSecrets(rawMsg);
 					}
 				} catch {
 					// If JSON parsing fails, use status text only
@@ -193,5 +203,40 @@ export class Embedder {
 
 	isReady(): boolean {
 		return this.initialized && !!this.apiKey;
+	}
+
+	/**
+	 * Safely truncate a string without splitting multi-byte characters
+	 * Ensures we don't cut in the middle of a surrogate pair
+	 */
+	private safeTruncate(text: string, maxLength: number): string {
+		if (text.length <= maxLength) return text;
+
+		// Check if we're cutting in the middle of a surrogate pair
+		let end = maxLength;
+		const charCode = text.charCodeAt(end - 1);
+
+		// If the last character is a high surrogate (0xD800-0xDBFF), include the low surrogate too
+		if (charCode >= 0xd800 && charCode <= 0xdbff && end < text.length) {
+			// The high surrogate needs its low surrogate pair, so we cut before it
+			end--;
+		}
+
+		return text.slice(0, end);
+	}
+
+	/**
+	 * Redact potential secrets from error messages
+	 * Removes patterns that look like API keys, tokens, or credentials
+	 */
+	private redactSecrets(message: string): string {
+		// Redact common API key patterns (sk-xxx, key-xxx, etc.)
+		const apiKeyPattern = /\b(sk-|key-|api[_-]?key[_-]?)[a-zA-Z0-9_-]{10,}\b/gi;
+		let redacted = message.replace(apiKeyPattern, '[REDACTED]');
+		// Redact Bearer tokens
+		redacted = redacted.replace(/Bearer\s+[a-zA-Z0-9_.-]+/gi, 'Bearer [REDACTED]');
+		// Redact long alphanumeric strings that look like secrets (32+ chars)
+		redacted = redacted.replace(/\b[a-zA-Z0-9_-]{32,}\b/g, '[REDACTED]');
+		return redacted;
 	}
 }

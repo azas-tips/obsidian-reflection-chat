@@ -308,6 +308,8 @@ export class SettingsTab extends PluginSettingTab {
 		}
 	}
 
+	private static readonly FETCH_TIMEOUT_MS = 30000; // 30 second timeout for model fetch
+
 	private async fetchModels(): Promise<void> {
 		if (!this.plugin.openRouterClient?.isConfigured()) {
 			return;
@@ -319,6 +321,14 @@ export class SettingsTab extends PluginSettingTab {
 		}
 
 		this.isFetchingModels = true;
+
+		// Set timeout to reset flag if fetch hangs
+		const timeoutId = setTimeout(() => {
+			if (this.isFetchingModels) {
+				logger.warn('Model fetch timed out, resetting state');
+				this.isFetchingModels = false;
+			}
+		}, SettingsTab.FETCH_TIMEOUT_MS);
 
 		try {
 			// Use OpenRouterClient to avoid duplicating API key handling
@@ -350,6 +360,7 @@ export class SettingsTab extends PluginSettingTab {
 		} catch (error) {
 			logger.error('Failed to fetch models:', error instanceof Error ? error : undefined);
 		} finally {
+			clearTimeout(timeoutId);
 			this.isFetchingModels = false;
 		}
 	}
