@@ -1,5 +1,7 @@
 import type { ChatMessage, OpenRouterModel, StreamChunk } from '../types';
 import { ApiError, withRetry } from '../utils/errors';
+import { getTranslations } from '../i18n';
+import { logger } from '../utils/logger';
 
 export interface OpenRouterOptions {
 	model: string;
@@ -11,6 +13,8 @@ export class OpenRouterClient {
 	private apiKey: string;
 	private baseUrl = 'https://openrouter.ai/api/v1';
 	private timeout = 60000; // 60 seconds
+	private streamReadTimeout = 30000; // 30 seconds between chunks
+	private static readonly MAX_RESPONSE_LENGTH = 500000; // 500KB max response
 
 	constructor(apiKey: string) {
 		this.apiKey = apiKey;
@@ -28,7 +32,7 @@ export class OpenRouterClient {
 		return {
 			Authorization: `Bearer ${this.apiKey}`,
 			'Content-Type': 'application/json',
-			'HTTP-Referer': 'https://github.com/haruki/obsidian-reflection-chat',
+			'HTTP-Referer': 'https://github.com/anthropics/obsidian-reflection-chat',
 			'X-Title': 'Reflection Chat',
 		};
 	}
@@ -44,8 +48,9 @@ export class OpenRouterClient {
 			});
 			return response;
 		} catch (error) {
+			const t = getTranslations();
 			if (error instanceof Error && error.name === 'AbortError') {
-				throw new ApiError('リクエストがタイムアウトしました。', 408);
+				throw new ApiError(t.errors.timeout, 408);
 			}
 			throw ApiError.networkError(error as Error);
 		} finally {
@@ -54,8 +59,14 @@ export class OpenRouterClient {
 	}
 
 	async complete(messages: ChatMessage[], options: OpenRouterOptions): Promise<string> {
+		const t = getTranslations();
 		if (!this.isConfigured()) {
-			throw new ApiError('APIキーが設定されていません。', 401);
+			throw new ApiError(t.errors.noApiKey, 401);
+		}
+
+		// Validate messages array to prevent API errors
+		if (!messages || messages.length === 0) {
+			throw new ApiError('Messages array cannot be empty', 400);
 		}
 
 		return withRetry(
@@ -78,7 +89,25 @@ export class OpenRouterClient {
 				}
 
 				const data = await response.json();
-				return data.choices[0]?.message?.content || '';
+
+				// Validate response structure
+				if (!data || !Array.isArray(data.choices) || data.choices.length === 0) {
+					throw new ApiError('Invalid API response: missing choices array', 500);
+				}
+
+				const content = data.choices[0]?.message?.content || '';
+
+				// Validate response length to prevent memory issues
+				if (content.length > OpenRouterClient.MAX_RESPONSE_LENGTH) {
+					logger.warn('API response exceeded maximum length, truncating');
+					const t = getTranslations();
+					return (
+						content.slice(0, OpenRouterClient.MAX_RESPONSE_LENGTH) +
+						t.errors.truncationMarker
+					);
+				}
+
+				return content;
 			},
 			{
 				maxRetries: 2,
@@ -99,8 +128,14 @@ export class OpenRouterClient {
 		options: OpenRouterOptions,
 		onChunk: (chunk: string) => void
 	): Promise<string> {
+		const t = getTranslations();
 		if (!this.isConfigured()) {
-			throw new ApiError('APIキーが設定されていません。', 401);
+			throw new ApiError(t.errors.noApiKey, 401);
+		}
+
+		// Validate messages array to prevent API errors
+		if (!messages || messages.length === 0) {
+			throw new ApiError('Messages array cannot be empty', 400);
 		}
 
 		const response = await this.fetchWithTimeout(`${this.baseUrl}/chat/completions`, {
@@ -121,7 +156,7 @@ export class OpenRouterClient {
 		}
 
 		if (!response.body) {
-			throw new ApiError('レスポンスボディがありません。', 500);
+			throw new ApiError(t.errors.noResponseBody, 500);
 		}
 
 		const reader = response.body.getReader();
@@ -129,9 +164,42 @@ export class OpenRouterClient {
 		let fullContent = '';
 		let buffer = '';
 
+		/**
+		 * Read with timeout - throws if no data received within streamReadTimeout
+		 * Uses settled flag to prevent double resolution and ensure cleanup
+		 */
+		const readWithTimeout = async (): Promise<ReadableStreamReadResult<Uint8Array>> => {
+			return new Promise((resolve, reject) => {
+				let settled = false;
+				const timeoutId = setTimeout(() => {
+					if (!settled) {
+						settled = true;
+						reject(new ApiError(t.errors.timeout, 408));
+					}
+				}, this.streamReadTimeout);
+
+				reader
+					.read()
+					.then((result) => {
+						clearTimeout(timeoutId);
+						if (!settled) {
+							settled = true;
+							resolve(result);
+						}
+					})
+					.catch((error) => {
+						clearTimeout(timeoutId);
+						if (!settled) {
+							settled = true;
+							reject(error);
+						}
+					});
+			});
+		};
+
 		try {
 			while (true) {
-				const { done, value } = await reader.read();
+				const { done, value } = await readWithTimeout();
 				if (done) break;
 
 				buffer += decoder.decode(value, { stream: true });
@@ -151,11 +219,24 @@ export class OpenRouterClient {
 						const chunk: StreamChunk = JSON.parse(data);
 						const content = chunk.choices[0]?.delta?.content;
 						if (content) {
+							// Enforce response length limit to prevent memory issues
+							if (
+								fullContent.length + content.length >
+								OpenRouterClient.MAX_RESPONSE_LENGTH
+							) {
+								logger.warn(
+									'Streaming response exceeded maximum length, truncating'
+								);
+								break;
+							}
 							fullContent += content;
 							onChunk(content);
 						}
 					} catch {
-						// Skip invalid JSON
+						// Log skipped chunks at debug level for diagnosis
+						logger.debug(
+							`Skipped invalid JSON chunk: ${data.slice(0, 100)}${data.length > 100 ? '...' : ''}`
+						);
 					}
 				}
 			}
@@ -182,16 +263,30 @@ export class OpenRouterClient {
 			}
 
 			const data = await response.json();
-			return data.data as OpenRouterModel[];
+
+			// Validate response structure
+			if (!data || !Array.isArray(data.data)) {
+				logger.warn('Invalid models API response structure');
+				return [];
+			}
+
+			// Filter and validate each model
+			return data.data.filter(
+				(model: unknown): model is OpenRouterModel =>
+					typeof model === 'object' &&
+					model !== null &&
+					typeof (model as Record<string, unknown>).id === 'string'
+			);
 		} catch (error) {
-			console.error('Failed to fetch models:', error);
+			logger.error('Failed to fetch models:', error instanceof Error ? error : undefined);
 			return [];
 		}
 	}
 
 	async testConnection(): Promise<{ success: boolean; message: string }> {
+		const t = getTranslations();
 		if (!this.isConfigured()) {
-			return { success: false, message: 'APIキーを入力してください。' };
+			return { success: false, message: t.notices.apiKeyNotSet };
 		}
 
 		try {
@@ -201,19 +296,19 @@ export class OpenRouterClient {
 			});
 
 			if (response.ok) {
-				return { success: true, message: '接続成功！' };
+				return { success: true, message: t.notices.connectionSuccess };
 			}
 
 			if (response.status === 401) {
-				return { success: false, message: 'APIキーが無効です。' };
+				return { success: false, message: t.errors.invalidApiKey };
 			}
 
-			return { success: false, message: `接続失敗: ${response.status}` };
+			return { success: false, message: `${t.notices.connectionFailed}${response.status}` };
 		} catch (error) {
 			if (error instanceof ApiError) {
 				return { success: false, message: error.message };
 			}
-			return { success: false, message: 'ネットワークエラーが発生しました。' };
+			return { success: false, message: t.errors.networkError };
 		}
 	}
 }

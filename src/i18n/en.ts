@@ -1,0 +1,292 @@
+import type { Translations } from './index';
+
+export const en: Translations = {
+	ui: {
+		viewTitle: 'Reflection Chat',
+		newChat: 'New Chat',
+		settings: 'Settings',
+		send: 'Send',
+		sending: '...',
+		saveAndEnd: 'Save & End',
+		clear: 'Clear',
+		inputPlaceholder: 'How was your day?',
+		emptyStateTitle: "Start today's reflection",
+		emptyStateDescription: "Share what's on your mind or what happened today.",
+		suggestions: {
+			work: 'How I felt at work today',
+			thoughts: "What I've been thinking about",
+			decisions: 'A decision I am struggling with',
+		},
+		relatedNotes: 'Related notes',
+		userLabel: 'Me',
+		botLabel: 'Bot',
+	},
+
+	commands: {
+		openChat: 'Open Chat',
+		reindexNotes: 'Reindex Notes',
+		ribbonTooltip: 'Open Reflection Chat',
+	},
+
+	settings: {
+		title: 'Reflection Chat Settings',
+		api: {
+			heading: 'API Settings',
+			apiKey: 'OpenRouter API Key',
+			apiKeyDesc: 'Enter your OpenRouter API key',
+			testConnection: 'Test Connection',
+			chatModel: 'Chat Model',
+			chatModelDesc: 'Model used for conversations',
+			summaryModel: 'Summary Model',
+			summaryModelDesc: 'Model used for session summaries (lightweight model recommended)',
+			embeddingModel: 'Embedding Model',
+			embeddingModelDesc: 'Embedding model used for semantic search',
+			embeddingModelOptions: {
+				qwen8b: 'Qwen3 Embedding 8B (Recommended)',
+				qwen06b: 'Qwen3 Embedding 0.6B (Lightweight)',
+				openai3small: 'OpenAI Text Embedding 3 Small',
+				openai3large: 'OpenAI Text Embedding 3 Large',
+			},
+		},
+		folders: {
+			heading: 'Folder Settings',
+			journal: 'Session Folder',
+			journalDesc: 'Folder to save session notes',
+			journalPlaceholder: 'journal',
+			entities: 'Entities Folder',
+			entitiesDesc: 'Folder to save entity notes (people, projects, books, etc.)',
+			entitiesPlaceholder: 'entities',
+		},
+		context: {
+			heading: 'Context Settings',
+			windowDays: 'Recent Days',
+			windowDaysDesc: 'How many days of notes to reference',
+			semanticResults: 'Semantic Results',
+			semanticResultsDesc: 'How many semantically similar notes to retrieve',
+		},
+		prompts: {
+			heading: 'Prompts',
+			systemPrompt: 'System Prompt',
+			systemPromptDesc: 'Prompt that defines AI coach behavior',
+			systemPromptPlaceholder: 'Enter system prompt...',
+			resetDefault: 'Reset to Default',
+		},
+		other: {
+			heading: 'Other',
+			language: 'Language',
+			languageDesc: 'Language for UI and note output',
+			autoIndex: 'Auto Index',
+			autoIndexDesc: 'Automatically update index when notes are saved',
+			reindex: 'Reindex Notes',
+			reindexDesc: 'Rebuild the index for all notes',
+			reindexButton: 'Reindex',
+		},
+	},
+
+	notices: {
+		noMessages: 'No messages to save',
+		apiKeyRequired: 'API key required for summary generation',
+		saving: 'Saving session...',
+		saved: 'Session saved',
+		saveFailed: 'Failed to save: ',
+		apiKeyNotSet: 'Please set your API key',
+		embeddingLoading: 'Loading embedding model...',
+		indexing: 'Indexing notes...',
+		indexComplete: 'Indexing complete',
+		indexFailed: 'Indexing failed',
+		connectionSuccess: 'Connection successful!',
+		connectionFailed: 'Connection failed: ',
+		reindexing: 'Rebuilding index...',
+		reindexComplete: 'Index rebuild complete',
+		invalidFolderPath:
+			'Invalid folder path. Use a relative path without special characters or "..".',
+		contentTruncated: 'Response was truncated due to length limit',
+		folderConflict: 'Journal and entities folders cannot be the same',
+		indexQueueFull: 'Index queue full - some file updates were skipped',
+	},
+
+	dialogs: {
+		clearConfirm: 'Clear current chat and start a new one?',
+	},
+
+	errors: {
+		invalidApiKey: 'Invalid API key. Please check your settings.',
+		rateLimited: 'Rate limited. Please wait and try again.',
+		serverError: 'Server error occurred. Please wait and try again.',
+		serviceUnavailable: 'API service is temporarily unavailable.',
+		networkError: 'Network error. Please check your internet connection.',
+		embeddingLoadFailed: 'Failed to load embedding model. Please restart.',
+		embeddingGenerateFailed: 'Failed to generate text embeddings.',
+		folderCreateFailed: 'Failed to create folder.',
+		fileWriteFailed: 'Failed to save file.',
+		indexOperationFailed: 'Vector index operation failed.',
+		parseError: 'Failed to parse data.',
+		timeout: 'Request timed out.',
+		unknown: 'An unexpected error occurred.',
+		noApiKey: 'API key is not set.',
+		noResponseBody: 'No response body.',
+		notInitialized: 'Plugin not initialized. Please restart.',
+		summaryFallback: 'Session summary could not be generated.',
+		truncationMarker: '... [response truncated]',
+	},
+
+	notes: {
+		sessionTitle: 'Session',
+		summary: 'Summary',
+		tags: 'Tags',
+		decisions: 'Pending Decisions',
+		insights: 'Insights',
+		entities: 'Mentioned Entities',
+		values: 'Values & Criteria',
+		conversationLog: 'Conversation Log',
+		overview: 'Overview',
+		relationships: 'Relationships',
+		memo: 'Notes',
+		firstMention: 'First mentioned',
+		relatedSessions: 'Related Sessions',
+		relationshipPlaceholder: '(Add relationships here)',
+	},
+
+	context: {
+		referenceInfo: 'Reference Information (Past Reflections)',
+		recentReflections: 'Recent Reflections',
+		relatedTopics: 'Related Past Topics',
+		relatedEntities: 'Related People & Projects',
+	},
+
+	embedding: {
+		queryPrefix: 'Query: ',
+		documentPrefix: 'Document: ',
+	},
+
+	prompts: {
+		system: `You are my personal coach and thinking partner.
+
+## Core Principles
+- Ask questions that deepen thinking rather than giving answers
+- Reference past decision patterns and values, pointing out consistency or changes
+- Support the process of finding answers myself
+- Pay attention to proper nouns (people, projects, books) and understand context
+
+## Dynamic Adaptation by Topic
+Naturally incorporate appropriate expert perspectives based on the conversation:
+- Career & Work → Career coach perspective
+- Relationships & Communication → Relationship coach perspective
+- Health & Habits → Wellness coach perspective
+- Creativity & Learning → Creative coach perspective
+- Money & Investments → Financial coach perspective
+- Life Direction & Values → Life coach perspective
+- Reading & Books → Reading partner perspective
+- Ideas & Planning → Brainstorming partner perspective
+- Project Review → Project coach perspective
+
+Reflect expertise naturally through the angle of questions and direction of exploration, without explicitly declaring it.
+
+## Conversation Style
+- Focus on one question at a time (don't ask multiple questions simultaneously)
+- Use "What?" and "What do you want?" instead of "Why?"
+- Actively reference past context when available ("You mentioned before that...")
+- Pay attention to relationships between entities ("Is that person your supervisor?")
+- Respect silence (thinking time) and don't rush
+- Keep responses to 3-5 sentences
+
+## Example Questions
+- "What bothers you most about that?"
+- "What would the ideal situation look like?"
+- "What did you choose in a similar situation before?"
+- "What's your priority among those options?"
+- "How do you think you'll feel about that choice in six months?"
+- "Does this relate to what you decided about...?"
+- "What specifically do you mean by that?" (during reading/learning)
+- "Can you think of a time in your experience when this applied?" (during reading/learning)
+
+## Prohibited
+- Long lectures or generalizations
+- Pushy advice
+- Excessive praise or agreement
+- Asking multiple questions at once
+- Speculating about things not mentioned`,
+
+		summary: `Analyze the following coaching session and structure it in JSON format.
+
+## Output Format
+{
+  "summary": "3-5 sentence summary. What was discussed and how did you feel/think",
+  "tags": ["tag1", "tag2"],
+  "category": "career / relationship / wellness / creative / financial / reading / idea / project / life",
+  "decisions": ["pending decisions if any"],
+  "insights": ["insights or learnings if any"],
+  "entities": [
+    {
+      "name": "Entity name",
+      "type": "person / project / company / book / other",
+      "description": "Brief description inferred from conversation",
+      "context": "Context in which it was mentioned"
+    }
+  ],
+  "relations": [
+    {
+      "from": "Entity A",
+      "to": "Entity B",
+      "type": "Type of relationship",
+      "description": "Details of relationship (optional)"
+    }
+  ],
+  "values": [
+    {
+      "value": "Name of value/criteria",
+      "context": "Context in which it was mentioned",
+      "sentiment": "positive / negative / conflicted"
+    }
+  ]
+}
+
+## Value Extraction Guide
+- Look for expressions like "I want to prioritize..." or "This is non-negotiable..."
+- Extract decision criteria when comparing options
+- Use "conflicted" when struggling with trade-offs
+- Examples: "time freedom", "financial stability", "growth opportunity", "family time", "social recognition"
+
+## Entity Extraction Guide
+- Extract proper nouns (names of people, projects, companies, books, etc.)
+- Don't extract common nouns ("boss", "colleague", "book")
+- Type classification:
+  - person: People (e.g., "John", "Dr. Smith")
+  - project: Projects or tasks (e.g., "Project X", "new initiative")
+  - company: Companies/organizations (e.g., "Company A", "XYZ Corp")
+  - book: Books (e.g., "7 Habits", "Atomic Habits")
+  - other: Others (e.g., places, events)
+- Only include information that can be inferred from the conversation
+- Combine multiple mentions of the same entity into one
+
+## Relationship Extraction Guide
+- Extract when relationships between entities are mentioned in conversation
+- Example types:
+  - Personal: supervisor, subordinate, colleague, mentor, family, friend
+  - Organizational: belongs to, responsible for, member of
+  - Book-related: author, recommender
+  - Project-related: in charge of, involved in
+- "Me/myself" can be a subject/object of relationships (e.g., John → me: supervisor)
+- Don't infer relationships not explicitly mentioned
+
+## Category Classification
+Choose one based on the main theme:
+- career: Work, career, job change, side business
+- relationship: Relationships, communication, family
+- wellness: Health, habits, mental health, lifestyle
+- creative: Creation, learning, skills, expression
+- financial: Money, investments, asset building
+- reading: Reading, understanding book content
+- idea: Ideas, inspiration, planning
+- project: Project review, progress
+- life: Life direction, values in general
+
+## Notes
+- Tags can be in any language
+- Use empty arrays for items with no matches
+- Don't fill in with speculation
+- Only extract values that clearly appeared in conversation
+- Only extract proper nouns for entities (not common nouns)
+- Only extract explicitly mentioned relationships`,
+	},
+};

@@ -1,7 +1,11 @@
 import { ItemView, WorkspaceLeaf, setIcon, Notice } from 'obsidian';
 import type ReflectionChatPlugin from '../main';
-import type { Message, ConversationContext, ExtendedApp } from '../types';
+import type { Message, ConversationContext } from '../types';
+import { openPluginSettings } from '../types';
 import { getErrorMessage } from '../utils/errors';
+import { getTranslations } from '../i18n';
+import { logger } from '../utils/logger';
+import { generateId } from '../utils/sanitize';
 
 export const VIEW_TYPE_CHAT = 'reflection-chat-view';
 
@@ -10,6 +14,11 @@ interface ChatViewState extends Record<string, unknown> {
 }
 
 export class ChatView extends ItemView {
+	private static readonly MAX_MESSAGE_HISTORY = 100;
+	private static readonly MAX_TEXTAREA_HEIGHT = 120;
+	private static readonly MAX_MESSAGE_LENGTH = 50000; // 50KB per message
+	private static readonly MAX_STREAMING_LENGTH = 100000; // 100KB for streaming content
+
 	private plugin: ReflectionChatPlugin;
 	private messagesContainer: HTMLElement | null = null;
 	private inputEl: HTMLTextAreaElement | null = null;
@@ -17,13 +26,57 @@ export class ChatView extends ItemView {
 	private relatedPanel: HTMLElement | null = null;
 	private statusBar: HTMLElement | null = null;
 
+	// Event handler references for cleanup
+	private inputResizeHandler: (() => void) | null = null;
+	private inputKeydownHandler: ((e: KeyboardEvent) => void) | null = null;
+	private sendClickHandler: (() => void) | null = null;
+
+	// Button references for cleanup
+	private newChatBtn: HTMLButtonElement | null = null;
+	private settingsBtn: HTMLButtonElement | null = null;
+	private saveBtn: HTMLButtonElement | null = null;
+	private clearBtn: HTMLButtonElement | null = null;
+
+	// Button handler references for cleanup
+	private newChatHandler: (() => void) | null = null;
+	private settingsHandler: (() => void) | null = null;
+	private saveHandler: (() => void) | null = null;
+	private clearHandler: (() => void) | null = null;
+
 	private messages: Message[] = [];
 	private isLoading = false;
+	private isClosed = false; // Prevents operations after view is closed
 	private streamingContent = '';
+	private currentStreamingAbortController: AbortController | null = null; // For canceling ongoing streams
+	private streamingTruncated = false; // Track if streaming was truncated
+	private currentStreamingElement: HTMLElement | null = null; // Cache for streaming element
 
 	constructor(leaf: WorkspaceLeaf, plugin: ReflectionChatPlugin) {
 		super(leaf);
 		this.plugin = plugin;
+	}
+
+	/**
+	 * Add a message and enforce limits to prevent memory leaks
+	 * @returns true if message was truncated
+	 */
+	private addMessage(message: Message): boolean {
+		let wasTruncated = false;
+		// Truncate message content if too long
+		if (message.content.length > ChatView.MAX_MESSAGE_LENGTH) {
+			message = {
+				...message,
+				content: message.content.slice(0, ChatView.MAX_MESSAGE_LENGTH) + '... (truncated)',
+			};
+			logger.warn('Message content truncated due to size limit');
+			wasTruncated = true;
+		}
+		this.messages.push(message);
+		// Remove oldest messages if limit exceeded
+		if (this.messages.length > ChatView.MAX_MESSAGE_HISTORY) {
+			this.messages = this.messages.slice(-ChatView.MAX_MESSAGE_HISTORY);
+		}
+		return wasTruncated;
 	}
 
 	getViewType(): string {
@@ -31,7 +84,8 @@ export class ChatView extends ItemView {
 	}
 
 	getDisplayText(): string {
-		return 'Reflection Chat';
+		const t = getTranslations();
+		return t.ui.viewTitle;
 	}
 
 	getIcon(): string {
@@ -43,29 +97,32 @@ export class ChatView extends ItemView {
 		container.empty();
 		container.addClass('reflection-chat-container');
 
+		const t = getTranslations();
+
 		// Header
 		const header = container.createDiv({ cls: 'reflection-chat-header' });
 		const titleWrapper = header.createDiv();
-		titleWrapper.createEl('h4', { text: 'Reflection Chat' });
+		titleWrapper.createEl('h4', { text: t.ui.viewTitle });
 
 		const headerActions = header.createDiv({ cls: 'reflection-chat-header-actions' });
 
-		const newChatBtn = headerActions.createEl('button', {
+		this.newChatBtn = headerActions.createEl('button', {
 			cls: 'clickable-icon',
-			attr: { 'aria-label': '新しいチャット' },
+			attr: { 'aria-label': t.ui.newChat },
 		});
-		setIcon(newChatBtn, 'plus');
-		newChatBtn.addEventListener('click', () => this.startNewChat());
+		setIcon(this.newChatBtn, 'plus');
+		this.newChatHandler = () => this.startNewChat();
+		this.newChatBtn.addEventListener('click', this.newChatHandler);
 
-		const settingsBtn = headerActions.createEl('button', {
+		this.settingsBtn = headerActions.createEl('button', {
 			cls: 'clickable-icon',
-			attr: { 'aria-label': '設定' },
+			attr: { 'aria-label': t.ui.settings },
 		});
-		setIcon(settingsBtn, 'settings');
-		settingsBtn.addEventListener('click', () => {
-			(this.app as ExtendedApp).setting.open();
-			(this.app as ExtendedApp).setting.openTabById('reflection-chat');
-		});
+		setIcon(this.settingsBtn, 'settings');
+		this.settingsHandler = () => {
+			openPluginSettings(this.app, 'reflection-chat');
+		};
+		this.settingsBtn.addEventListener('click', this.settingsHandler);
 
 		// Status bar
 		this.statusBar = container.createDiv({ cls: 'reflection-chat-status' });
@@ -86,50 +143,152 @@ export class ChatView extends ItemView {
 		this.inputEl = inputWrapper.createEl('textarea', {
 			cls: 'reflection-chat-input',
 			attr: {
-				placeholder: '今日はどんな一日だった？',
+				placeholder: t.ui.inputPlaceholder,
 				rows: '1',
 			},
 		});
 
 		this.sendBtn = inputWrapper.createEl('button', {
 			cls: 'reflection-chat-send-btn',
-			text: '送信',
+			text: t.ui.send,
 		});
 
-		// Auto-resize textarea
-		this.inputEl.addEventListener('input', () => {
+		// Auto-resize textarea - store handler for cleanup
+		this.inputResizeHandler = () => {
 			if (this.inputEl) {
 				this.inputEl.style.height = 'auto';
-				this.inputEl.style.height = Math.min(this.inputEl.scrollHeight, 120) + 'px';
+				this.inputEl.style.height =
+					Math.min(this.inputEl.scrollHeight, ChatView.MAX_TEXTAREA_HEIGHT) + 'px';
 			}
-		});
+		};
+		this.inputEl.addEventListener('input', this.inputResizeHandler);
 
-		// Send on Enter (without Shift)
-		this.inputEl.addEventListener('keydown', (e) => {
+		// Send on Enter (without Shift) - store handler for cleanup
+		this.inputKeydownHandler = (e: KeyboardEvent) => {
 			if (e.key === 'Enter' && !e.shiftKey) {
 				e.preventDefault();
 				this.sendMessage();
 			}
-		});
+		};
+		this.inputEl.addEventListener('keydown', this.inputKeydownHandler);
 
-		this.sendBtn.addEventListener('click', () => this.sendMessage());
+		// Send button click - store handler for cleanup
+		this.sendClickHandler = () => this.sendMessage();
+		this.sendBtn.addEventListener('click', this.sendClickHandler);
 
 		// Action buttons
 		const actions = inputArea.createDiv({ cls: 'reflection-chat-actions' });
 
-		const saveBtn = actions.createEl('button', { cls: 'reflection-chat-action-btn' });
-		setIcon(saveBtn.createSpan(), 'save');
-		saveBtn.createSpan({ text: '保存して終了' });
-		saveBtn.addEventListener('click', () => this.saveSession());
+		this.saveBtn = actions.createEl('button', { cls: 'reflection-chat-action-btn' });
+		setIcon(this.saveBtn.createSpan(), 'save');
+		this.saveBtn.createSpan({ text: t.ui.saveAndEnd });
+		this.saveHandler = () => this.saveSession();
+		this.saveBtn.addEventListener('click', this.saveHandler);
 
-		const clearBtn = actions.createEl('button', { cls: 'reflection-chat-action-btn' });
-		setIcon(clearBtn.createSpan(), 'trash-2');
-		clearBtn.createSpan({ text: 'クリア' });
-		clearBtn.addEventListener('click', () => this.clearChat());
+		this.clearBtn = actions.createEl('button', { cls: 'reflection-chat-action-btn' });
+		setIcon(this.clearBtn.createSpan(), 'trash-2');
+		this.clearBtn.createSpan({ text: t.ui.clear });
+		this.clearHandler = () => this.clearChat();
+		this.clearBtn.addEventListener('click', this.clearHandler);
 	}
 
 	async onClose(): Promise<void> {
-		// Cleanup
+		// Mark as closed first to prevent any further operations
+		this.isClosed = true;
+
+		// Abort any ongoing streaming
+		if (this.currentStreamingAbortController) {
+			this.currentStreamingAbortController.abort();
+			this.currentStreamingAbortController = null;
+		}
+
+		// Remove event listeners before clearing element references
+		this.cleanupEventListeners();
+
+		// Clear element references to allow garbage collection
+		this.messagesContainer = null;
+		this.inputEl = null;
+		this.sendBtn = null;
+		this.relatedPanel = null;
+		this.statusBar = null;
+		this.currentStreamingElement = null;
+		this.newChatBtn = null;
+		this.settingsBtn = null;
+		this.saveBtn = null;
+		this.clearBtn = null;
+
+		// Clear message history to free memory
+		this.messages = [];
+
+		// Reset state
+		this.streamingContent = '';
+		this.isLoading = false;
+	}
+
+	/**
+	 * Clean up event listeners from input elements and buttons
+	 * Called before re-rendering UI to prevent memory leaks
+	 */
+	private cleanupEventListeners(): void {
+		// Cleanup input element listeners
+		if (this.inputEl) {
+			if (this.inputResizeHandler) {
+				this.inputEl.removeEventListener('input', this.inputResizeHandler);
+			}
+			if (this.inputKeydownHandler) {
+				this.inputEl.removeEventListener('keydown', this.inputKeydownHandler);
+			}
+		}
+		if (this.sendBtn && this.sendClickHandler) {
+			this.sendBtn.removeEventListener('click', this.sendClickHandler);
+		}
+
+		// Cleanup button listeners
+		if (this.newChatBtn && this.newChatHandler) {
+			this.newChatBtn.removeEventListener('click', this.newChatHandler);
+		}
+		if (this.settingsBtn && this.settingsHandler) {
+			this.settingsBtn.removeEventListener('click', this.settingsHandler);
+		}
+		if (this.saveBtn && this.saveHandler) {
+			this.saveBtn.removeEventListener('click', this.saveHandler);
+		}
+		if (this.clearBtn && this.clearHandler) {
+			this.clearBtn.removeEventListener('click', this.clearHandler);
+		}
+
+		// Clear handler references
+		this.inputResizeHandler = null;
+		this.inputKeydownHandler = null;
+		this.sendClickHandler = null;
+		this.newChatHandler = null;
+		this.settingsHandler = null;
+		this.saveHandler = null;
+		this.clearHandler = null;
+	}
+
+	/**
+	 * Refresh UI when language changes while preserving chat state
+	 */
+	refreshUI(): void {
+		// Save current input value
+		const currentInput = this.inputEl?.value || '';
+
+		// Clean up old event listeners before re-rendering
+		this.cleanupEventListeners();
+
+		// Re-render the view structure with new translations
+		this.onOpen();
+
+		// Restore messages if any
+		if (this.messages.length > 0) {
+			this.renderMessages();
+		}
+
+		// Restore input value
+		if (this.inputEl && currentInput) {
+			this.inputEl.value = currentInput;
+		}
 	}
 
 	getState(): ChatViewState {
@@ -138,10 +297,35 @@ export class ChatView extends ItemView {
 		};
 	}
 
-	async setState(state: ChatViewState, result: any): Promise<void> {
-		if (state.messages && Array.isArray(state.messages)) {
-			this.messages = state.messages;
-			this.renderMessages();
+	async setState(state: unknown, result: { history: boolean }): Promise<void> {
+		// Type-safe state access without unsafe cast
+		const chatState = this.validateChatState(state);
+		if (chatState?.messages) {
+			const originalCount = chatState.messages.length;
+			// Validate message structure before assignment
+			const validMessages = chatState.messages.filter(
+				(msg): msg is Message =>
+					typeof msg === 'object' &&
+					msg !== null &&
+					typeof msg.id === 'string' &&
+					typeof msg.content === 'string' &&
+					(msg.role === 'user' || msg.role === 'assistant') &&
+					typeof msg.timestamp === 'number'
+			);
+
+			// Warn if messages were filtered out
+			const filteredCount = originalCount - validMessages.length;
+			if (filteredCount > 0) {
+				logger.warn(
+					`setState: ${filteredCount} of ${originalCount} messages were invalid and filtered out`
+				);
+			}
+
+			this.messages = validMessages;
+			// Only render if container is ready (onOpen has completed)
+			if (this.messagesContainer) {
+				this.renderMessages();
+			}
 		}
 		await super.setState(state, result);
 	}
@@ -150,26 +334,28 @@ export class ChatView extends ItemView {
 		if (!this.statusBar) return;
 		this.statusBar.empty();
 
+		const t = getTranslations();
 		const isConfigured = this.plugin.openRouterClient?.isConfigured();
 		const isEmbeddingReady = this.plugin.embedder?.isReady();
 
 		if (!isConfigured) {
 			this.statusBar.addClass('warning');
 			setIcon(this.statusBar.createSpan(), 'alert-triangle');
-			this.statusBar.createSpan({ text: 'APIキーを設定してください' });
+			this.statusBar.createSpan({ text: t.notices.apiKeyNotSet });
 		} else if (!isEmbeddingReady) {
 			this.statusBar.removeClass('warning');
 			setIcon(this.statusBar.createSpan(), 'loader');
-			this.statusBar.createSpan({ text: '埋め込みモデルを読み込み中...' });
+			this.statusBar.createSpan({ text: t.notices.embeddingLoading });
 		} else {
 			this.statusBar.style.display = 'none';
 		}
 	}
 
 	private startNewChat(): void {
+		const t = getTranslations();
 		if (this.messages.length > 0) {
 			// Ask for confirmation
-			if (!confirm('現在のチャットをクリアして新しいチャットを開始しますか？')) {
+			if (!confirm(t.dialogs.clearConfirm)) {
 				return;
 			}
 		}
@@ -190,20 +376,22 @@ export class ChatView extends ItemView {
 		if (!this.messagesContainer) return;
 		this.messagesContainer.empty();
 
+		const t = getTranslations();
+
 		const empty = this.messagesContainer.createDiv({ cls: 'reflection-chat-empty' });
 		empty.createDiv({ cls: 'reflection-chat-empty-icon', text: '💬' });
-		empty.createDiv({ cls: 'reflection-chat-empty-title', text: '今日の振り返りを始めよう' });
+		empty.createDiv({ cls: 'reflection-chat-empty-title', text: t.ui.emptyStateTitle });
 		empty.createDiv({
 			cls: 'reflection-chat-empty-description',
-			text: '何か気になっていることや、今日あったことを話してみてください。',
+			text: t.ui.emptyStateDescription,
 		});
 
 		// Quick start suggestions
 		const suggestions = empty.createDiv({ cls: 'reflection-chat-suggestions' });
 		const suggestionTexts = [
-			'今日の仕事で感じたこと',
-			'最近考えていること',
-			'悩んでいる決断について',
+			t.ui.suggestions.work,
+			t.ui.suggestions.thoughts,
+			t.ui.suggestions.decisions,
 		];
 
 		for (const text of suggestionTexts) {
@@ -252,46 +440,62 @@ export class ChatView extends ItemView {
 	}
 
 	private renderStreamingMessage(content: string): void {
-		if (!this.messagesContainer) return;
+		// Double-check: verify view is still valid before any DOM operations
+		if (this.isClosed || !this.messagesContainer) return;
 
-		let streamingEl = this.messagesContainer.querySelector(
-			'.reflection-chat-message.streaming'
-		);
+		// Use cached element to avoid repeated DOM queries
+		if (!this.currentStreamingElement) {
+			// Re-check before DOM creation
+			if (this.isClosed) return;
 
-		if (!streamingEl) {
-			streamingEl = this.messagesContainer.createDiv({
+			this.currentStreamingElement = this.messagesContainer.createDiv({
 				cls: 'reflection-chat-message assistant streaming',
 			});
 
-			const icon = (streamingEl as HTMLElement).createDiv({
+			const icon = this.currentStreamingElement.createDiv({
 				cls: 'reflection-chat-message-icon',
 			});
 			icon.textContent = '🤖';
 
-			(streamingEl as HTMLElement).createDiv({ cls: 'reflection-chat-message-content' });
+			this.currentStreamingElement.createDiv({ cls: 'reflection-chat-message-content' });
 		}
 
-		const contentEl = streamingEl.querySelector('.reflection-chat-message-content');
+		// Re-check before content update
+		if (this.isClosed) return;
+
+		const contentEl = this.currentStreamingElement.querySelector(
+			'.reflection-chat-message-content'
+		);
 		if (contentEl) {
 			contentEl.textContent = content;
 
-			if (!contentEl.querySelector('.reflection-chat-cursor')) {
+			if (
+				!contentEl.querySelector('.reflection-chat-cursor') &&
+				contentEl instanceof HTMLElement
+			) {
 				contentEl.createSpan({ cls: 'reflection-chat-cursor' });
 			}
 		}
 
+		// Re-check before scroll operation
+		if (this.isClosed || !this.messagesContainer) return;
 		this.messagesContainer.scrollTop = this.messagesContainer.scrollHeight;
 	}
 
 	private finalizeStreamingMessage(): void {
-		const streamingEl = this.messagesContainer?.querySelector(
-			'.reflection-chat-message.streaming'
-		);
+		// Use cached element if available, fallback to DOM query
+		const streamingEl =
+			this.currentStreamingElement ||
+			this.messagesContainer?.querySelector('.reflection-chat-message.streaming');
+
 		if (streamingEl) {
 			streamingEl.removeClass('streaming');
 			const cursor = streamingEl.querySelector('.reflection-chat-cursor');
 			cursor?.remove();
 		}
+
+		// Clear cached reference
+		this.currentStreamingElement = null;
 	}
 
 	private renderError(errorMessage: string): void {
@@ -319,12 +523,19 @@ export class ChatView extends ItemView {
 		const content = this.inputEl.value.trim();
 		if (!content) return;
 
+		const t = getTranslations();
+
 		// Check if API is configured
 		if (!this.plugin.openRouterClient?.isConfigured()) {
-			new Notice('APIキーを設定してください');
-			(this.app as ExtendedApp).setting.open();
-			(this.app as ExtendedApp).setting.openTabById('reflection-chat');
+			new Notice(t.notices.apiKeyNotSet);
+			openPluginSettings(this.app, 'reflection-chat');
 			return;
+		}
+
+		// Cancel any ongoing streaming before starting new one
+		if (this.currentStreamingAbortController) {
+			this.currentStreamingAbortController.abort();
+			this.currentStreamingAbortController = null;
 		}
 
 		// Clear input
@@ -333,16 +544,17 @@ export class ChatView extends ItemView {
 
 		// Add user message
 		const userMessage: Message = {
-			id: this.generateId(),
+			id: generateId(),
 			role: 'user',
 			content,
 			timestamp: Date.now(),
 		};
-		this.messages.push(userMessage);
+		this.addMessage(userMessage);
 		this.renderMessages();
 
 		// Set loading state
 		this.isLoading = true;
+		this.streamingTruncated = false;
 		this.updateSendButton();
 
 		try {
@@ -354,33 +566,51 @@ export class ChatView extends ItemView {
 
 			// Stream response
 			this.streamingContent = '';
+			this.currentStreamingAbortController = new AbortController();
 			await this.streamResponse(content, context);
+
+			// Notify user if content was truncated
+			if (this.streamingTruncated) {
+				new Notice(t.notices.contentTruncated);
+			}
 
 			// Add assistant message
 			const assistantMessage: Message = {
-				id: this.generateId(),
+				id: generateId(),
 				role: 'assistant',
 				content: this.streamingContent,
 				timestamp: Date.now(),
 			};
-			this.messages.push(assistantMessage);
+			this.addMessage(assistantMessage);
 			this.finalizeStreamingMessage();
 		} catch (error) {
-			console.error('Error sending message:', error);
+			// Don't show error for aborted requests
+			if (error instanceof Error && error.name === 'AbortError') {
+				logger.info('Streaming aborted by user');
+				// Clean up streaming UI on abort
+				this.finalizeStreamingMessage();
+				return;
+			}
+			logger.error('Error sending message:', error instanceof Error ? error : undefined);
 			const errorMsg = getErrorMessage(error);
 			this.renderError(errorMsg);
 		} finally {
+			this.currentStreamingAbortController = null;
+			this.currentStreamingElement = null; // Clear cached element
 			this.isLoading = false;
 			this.updateSendButton();
 		}
 	}
 
 	private async getContext(message: string): Promise<ConversationContext> {
-		if (this.plugin.embedder?.isReady()) {
+		if (this.plugin.embedder?.isReady() && this.plugin.contextRetriever) {
 			try {
 				return await this.plugin.contextRetriever.retrieve(message, this.messages);
 			} catch (error) {
-				console.error('Context retrieval error:', error);
+				logger.error(
+					'Context retrieval error:',
+					error instanceof Error ? error : undefined
+				);
 			}
 		}
 
@@ -392,15 +622,49 @@ export class ChatView extends ItemView {
 	}
 
 	private async streamResponse(userMessage: string, context: ConversationContext): Promise<void> {
+		if (!this.plugin.chatEngine) {
+			throw new Error('Chat engine not initialized');
+		}
+
+		// Capture abort controller reference to avoid race conditions
+		const abortController = this.currentStreamingAbortController;
+
+		// Check if already aborted
+		if (abortController?.signal.aborted) {
+			throw new Error('Streaming aborted');
+		}
+
 		await this.plugin.chatEngine.chatStream(this.messages, context, (chunk: string) => {
-			this.streamingContent += chunk;
-			this.renderStreamingMessage(this.streamingContent);
+			// Check if view is closed or aborted
+			if (this.isClosed || abortController?.signal.aborted) {
+				return; // Stop processing chunks
+			}
+
+			try {
+				// Enforce streaming content limit to prevent memory issues
+				if (this.streamingContent.length < ChatView.MAX_STREAMING_LENGTH) {
+					this.streamingContent += chunk;
+					this.renderStreamingMessage(this.streamingContent);
+				} else if (!this.streamingTruncated) {
+					// Mark as truncated only once
+					this.streamingTruncated = true;
+					this.streamingContent += '... (truncated)';
+					this.renderStreamingMessage(this.streamingContent);
+				}
+			} catch (renderError) {
+				// Log rendering errors but don't interrupt streaming
+				logger.error(
+					'Error rendering streaming message:',
+					renderError instanceof Error ? renderError : undefined
+				);
+			}
 		});
 	}
 
 	private showRelatedNotes(context: ConversationContext): void {
 		if (!this.relatedPanel) return;
 
+		const t = getTranslations();
 		const hasRelated =
 			context.recentNotes.length > 0 ||
 			context.semanticMatches.length > 0 ||
@@ -416,7 +680,7 @@ export class ChatView extends ItemView {
 
 		const header = this.relatedPanel.createDiv({ cls: 'reflection-chat-related-header' });
 		setIcon(header.createSpan(), 'link');
-		header.createSpan({ text: '関連する過去' });
+		header.createSpan({ text: t.ui.relatedNotes });
 
 		const items = this.relatedPanel.createDiv({ cls: 'reflection-chat-related-items' });
 
@@ -440,19 +704,26 @@ export class ChatView extends ItemView {
 	}
 
 	private async saveSession(): Promise<void> {
+		const t = getTranslations();
+
 		if (this.messages.length === 0) {
-			new Notice('保存するメッセージがありません');
+			new Notice(t.notices.noMessages);
 			return;
 		}
 
-		if (!this.plugin.openRouterClient?.isConfigured()) {
-			new Notice('要約生成にはAPIキーが必要です');
+		if (!this.plugin.openRouterClient || !this.plugin.openRouterClient.isConfigured()) {
+			new Notice(t.notices.apiKeyRequired);
+			return;
+		}
+
+		if (!this.plugin.chatEngine || !this.plugin.sessionManager) {
+			new Notice(t.errors.notInitialized);
 			return;
 		}
 
 		this.isLoading = true;
 		this.updateSendButton();
-		new Notice('セッションを保存中...');
+		new Notice(t.notices.saving);
 
 		try {
 			const summary = await this.plugin.chatEngine.generateSummary(this.messages);
@@ -473,14 +744,14 @@ export class ChatView extends ItemView {
 			const file = await this.plugin.sessionManager.saveSession(summary, modelInfo);
 
 			if (file) {
-				new Notice('セッションを保存しました');
+				new Notice(t.notices.saved);
 				await this.app.workspace.openLinkText(file.path, '', true);
 			}
 
 			this.clearChat();
 		} catch (error) {
-			console.error('Save error:', error);
-			new Notice('保存に失敗しました: ' + getErrorMessage(error));
+			logger.error('Save error:', error instanceof Error ? error : undefined);
+			new Notice(t.notices.saveFailed + getErrorMessage(error));
 		} finally {
 			this.isLoading = false;
 			this.updateSendButton();
@@ -488,16 +759,27 @@ export class ChatView extends ItemView {
 	}
 
 	private updateSendButton(): void {
+		const t = getTranslations();
 		if (this.sendBtn) {
 			this.sendBtn.disabled = this.isLoading;
-			this.sendBtn.textContent = this.isLoading ? '...' : '送信';
+			this.sendBtn.textContent = this.isLoading ? t.ui.sending : t.ui.send;
 		}
 		if (this.inputEl) {
 			this.inputEl.disabled = this.isLoading;
 		}
 	}
 
-	private generateId(): string {
-		return Date.now().toString(36) + Math.random().toString(36).substring(2);
+	/**
+	 * Type guard for validating ChatViewState from unknown state
+	 */
+	private validateChatState(state: unknown): ChatViewState | null {
+		if (typeof state !== 'object' || state === null) {
+			return null;
+		}
+		const obj = state as Record<string, unknown>;
+		if (!Array.isArray(obj.messages)) {
+			return null;
+		}
+		return { messages: obj.messages as Message[] };
 	}
 }

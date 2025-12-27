@@ -1,3 +1,13 @@
+import { getTranslations } from '../i18n';
+
+// API error response body structure
+interface ApiErrorBody {
+	error?: {
+		message?: string;
+		code?: string;
+	};
+}
+
 // Custom error types for better error handling
 
 export class ReflectionChatError extends Error {
@@ -20,30 +30,28 @@ export class ApiError extends ReflectionChatError {
 		this.name = 'ApiError';
 	}
 
-	static fromResponse(status: number, body?: any): ApiError {
+	static fromResponse(status: number, body?: ApiErrorBody): ApiError {
+		const t = getTranslations();
 		let message = `API request failed with status ${status}`;
 
 		if (body?.error?.message) {
 			message = body.error.message;
 		} else if (status === 401) {
-			message = 'APIキーが無効です。設定を確認してください。';
+			message = t.errors.invalidApiKey;
 		} else if (status === 429) {
-			message = 'APIのレート制限に達しました。しばらく待ってから再試行してください。';
+			message = t.errors.rateLimited;
 		} else if (status === 500) {
-			message = 'APIサーバーでエラーが発生しました。しばらく待ってから再試行してください。';
+			message = t.errors.serverError;
 		} else if (status === 503) {
-			message = 'APIサービスが一時的に利用できません。';
+			message = t.errors.serviceUnavailable;
 		}
 
 		return new ApiError(message, status);
 	}
 
 	static networkError(error: Error): ApiError {
-		return new ApiError(
-			'ネットワークエラーが発生しました。インターネット接続を確認してください。',
-			undefined,
-			error
-		);
+		const t = getTranslations();
+		return new ApiError(t.errors.networkError, undefined, error);
 	}
 }
 
@@ -57,14 +65,13 @@ export class EmbeddingError extends ReflectionChatError {
 	}
 
 	static modelLoadError(error: Error): EmbeddingError {
-		return new EmbeddingError(
-			'埋め込みモデルの読み込みに失敗しました。再起動してください。',
-			error
-		);
+		const t = getTranslations();
+		return new EmbeddingError(t.errors.embeddingLoadFailed, error);
 	}
 
 	static embeddingGenerationError(error: Error): EmbeddingError {
-		return new EmbeddingError('テキストの埋め込み生成に失敗しました。', error);
+		const t = getTranslations();
+		return new EmbeddingError(t.errors.embeddingGenerateFailed, error);
 	}
 }
 
@@ -78,20 +85,25 @@ export class StorageError extends ReflectionChatError {
 	}
 
 	static folderCreateError(folderPath: string, error: Error): StorageError {
-		return new StorageError(`フォルダ "${folderPath}" の作成に失敗しました。`, error);
+		const t = getTranslations();
+		return new StorageError(`${t.errors.folderCreateFailed} (${folderPath})`, error);
 	}
 
 	static fileWriteError(filePath: string, error: Error): StorageError {
-		return new StorageError(`ファイル "${filePath}" の保存に失敗しました。`, error);
+		const t = getTranslations();
+		return new StorageError(`${t.errors.fileWriteFailed} (${filePath})`, error);
 	}
 
 	static indexError(error: Error): StorageError {
-		return new StorageError('ベクトルインデックスの操作に失敗しました。', error);
+		const t = getTranslations();
+		return new StorageError(t.errors.indexOperationFailed, error);
 	}
 }
 
 // User-friendly error messages
 export function getErrorMessage(error: unknown): string {
+	const t = getTranslations();
+
 	if (error instanceof ReflectionChatError) {
 		return error.message;
 	}
@@ -99,18 +111,18 @@ export function getErrorMessage(error: unknown): string {
 	if (error instanceof Error) {
 		// Check for common error patterns
 		if (error.message.includes('fetch')) {
-			return 'ネットワークエラーが発生しました。';
+			return t.errors.networkError;
 		}
 		if (error.message.includes('JSON')) {
-			return 'データの解析に失敗しました。';
+			return t.errors.parseError;
 		}
 		if (error.message.includes('timeout')) {
-			return 'リクエストがタイムアウトしました。';
+			return t.errors.timeout;
 		}
 		return error.message;
 	}
 
-	return '予期しないエラーが発生しました。';
+	return t.errors.unknown;
 }
 
 // Retry utility
@@ -124,15 +136,17 @@ export async function withRetry<T>(
 ): Promise<T> {
 	const { maxRetries = 3, delayMs = 1000, shouldRetry = () => true } = options;
 
-	let lastError: unknown;
+	// Ensure maxRetries is at least 0
+	const safeMaxRetries = Math.max(0, maxRetries);
+	let lastError: unknown = new Error('Retry function failed without executing');
 
-	for (let attempt = 0; attempt <= maxRetries; attempt++) {
+	for (let attempt = 0; attempt <= safeMaxRetries; attempt++) {
 		try {
 			return await fn();
 		} catch (error) {
 			lastError = error;
 
-			if (attempt === maxRetries || !shouldRetry(error)) {
+			if (attempt === safeMaxRetries || !shouldRetry(error)) {
 				throw error;
 			}
 

@@ -1,18 +1,29 @@
 import type { App, TFile, TAbstractFile, EventRef } from 'obsidian';
-import { TFile as ObsidianTFile } from 'obsidian';
+import { TFile as ObsidianTFile, Notice } from 'obsidian';
 import { Embedder } from './Embedder';
 import { VectorStore, VectorMetadata } from './VectorStore';
-import { parseFrontmatter } from '../utils/frontmatter';
+import {
+	parseFrontmatter,
+	getFrontmatterString,
+	getFrontmatterStringArray,
+} from '../utils/frontmatter';
+import { logger } from '../utils/logger';
+import { getTranslations } from '../i18n';
 
 export class NoteIndexer {
+	private static readonly DEBOUNCE_MS = 1000;
+	private static readonly MAX_SUMMARY_LENGTH = 500;
+	private static readonly MAX_PENDING_UPDATES = 50; // Prevent memory leaks from rapid file changes
+
 	private app: App;
 	private embedder: Embedder;
 	private vectorStore: VectorStore;
 	private journalFolder: string;
 	private entitiesFolder: string;
 	private isIndexing = false;
+	private isDestroyed = false; // Flag to prevent operations after destroy
 	private pendingUpdates: Map<string, NodeJS.Timeout> = new Map();
-	private debounceMs = 1000;
+	private indexingPaths: Set<string> = new Set(); // Track files currently being indexed
 	private eventRefs: EventRef[] = [];
 
 	constructor(
@@ -51,6 +62,9 @@ export class NoteIndexer {
 	}
 
 	destroy(): void {
+		// Mark as destroyed to prevent new operations
+		this.isDestroyed = true;
+
 		// Remove all event listeners
 		for (const ref of this.eventRefs) {
 			this.app.vault.offref(ref);
@@ -62,6 +76,7 @@ export class NoteIndexer {
 			clearTimeout(timeout);
 		}
 		this.pendingUpdates.clear();
+		this.indexingPaths.clear();
 	}
 
 	private async handleFileChange(
@@ -107,14 +122,59 @@ export class NoteIndexer {
 	private debouncedIndex(file: TFile): void {
 		this.cancelPendingUpdate(file.path);
 
-		const timeout = setTimeout(async () => {
-			this.pendingUpdates.delete(file.path);
-			try {
-				await this.indexFile(file);
-			} catch (error) {
-				console.error(`Failed to index ${file.path}:`, error);
+		// Enforce maximum pending updates to prevent memory leaks
+		if (this.pendingUpdates.size >= NoteIndexer.MAX_PENDING_UPDATES) {
+			// Clear oldest entries (FIFO cleanup)
+			const iterator = this.pendingUpdates.entries();
+			const oldest = iterator.next().value;
+			if (oldest) {
+				clearTimeout(oldest[1]);
+				this.pendingUpdates.delete(oldest[0]);
+				logger.warn('Dropped pending index update due to queue limit');
+				// Notify user that updates are being dropped
+				const t = getTranslations();
+				new Notice(t.notices.indexQueueFull);
 			}
-		}, this.debounceMs);
+		}
+
+		const timeout = setTimeout(() => {
+			this.pendingUpdates.delete(file.path);
+
+			// Skip if indexer was destroyed while waiting
+			if (this.isDestroyed) {
+				return;
+			}
+
+			// If this file is currently being indexed, reschedule to avoid race condition
+			if (this.indexingPaths.has(file.path)) {
+				this.debouncedIndex(file);
+				return;
+			}
+
+			// Mark file as being indexed
+			this.indexingPaths.add(file.path);
+
+			// Use void IIFE to handle async operation properly
+			void (async () => {
+				try {
+					await this.indexFile(file);
+				} catch (error) {
+					// Skip error notification if destroyed during indexing
+					if (this.isDestroyed) return;
+
+					logger.error(
+						`Failed to index ${file.path}:`,
+						error instanceof Error ? error : undefined
+					);
+					// Notify user of background indexing failure
+					const t = getTranslations();
+					new Notice(`${t.notices.indexFailed}: ${file.basename}`);
+				} finally {
+					// Always remove from indexing set when done
+					this.indexingPaths.delete(file.path);
+				}
+			})();
+		}, NoteIndexer.DEBOUNCE_MS);
 
 		this.pendingUpdates.set(file.path, timeout);
 	}
@@ -141,19 +201,22 @@ export class NoteIndexer {
 			// Get all markdown files in target folders
 			const files = this.app.vault.getMarkdownFiles().filter((f) => this.isTargetFile(f));
 
-			console.log(`Indexing ${files.length} files...`);
+			logger.info(`Indexing ${files.length} files...`);
 
 			for (const file of files) {
 				try {
 					await this.indexFile(file);
 					indexed++;
 				} catch (error) {
-					console.error(`Failed to index ${file.path}:`, error);
+					logger.error(
+						`Failed to index ${file.path}:`,
+						error instanceof Error ? error : undefined
+					);
 					errors++;
 				}
 			}
 
-			console.log(`Indexed ${indexed} files, ${errors} errors`);
+			logger.info(`Indexed ${indexed} files, ${errors} errors`);
 		} finally {
 			this.isIndexing = false;
 		}
@@ -162,9 +225,17 @@ export class NoteIndexer {
 	}
 
 	async indexFile(file: TFile): Promise<void> {
+		// Check if destroyed before starting
+		if (this.isDestroyed) {
+			return;
+		}
+
 		try {
 			// Read file content
 			const content = await this.app.vault.read(file);
+
+			// Check again after async operation
+			if (this.isDestroyed) return;
 
 			// Parse frontmatter and content
 			const { frontmatter, body } = parseFrontmatter(content);
@@ -173,22 +244,31 @@ export class NoteIndexer {
 			const metadata = this.extractMetadata(file, frontmatter, body);
 
 			// Create text for embedding
-			const embeddingText = this.createEmbeddingText(metadata, body);
+			const embeddingText = this.createEmbeddingText(metadata);
 
 			// Generate embedding
 			const vector = await this.embedder.embedDocument(embeddingText);
 
+			// Check again after async operation
+			if (this.isDestroyed) return;
+
 			// Upsert to vector store
 			await this.vectorStore.upsert(file.path, vector, metadata);
 		} catch (error) {
-			console.error(`Error indexing ${file.path}:`, error);
+			// Don't log errors if destroyed during operation
+			if (this.isDestroyed) return;
+
+			logger.error(
+				`Error indexing ${file.path}:`,
+				error instanceof Error ? error : undefined
+			);
 			throw error;
 		}
 	}
 
 	private extractMetadata(
 		file: TFile,
-		frontmatter: Record<string, any>,
+		frontmatter: Record<string, unknown>,
 		body: string
 	): VectorMetadata {
 		// Get title from file name or first heading
@@ -198,20 +278,20 @@ export class NoteIndexer {
 			title = headingMatch[1];
 		}
 
-		// Extract summary (first 500 characters of body, excluding headings)
+		// Extract summary from body, excluding headings
 		const summaryText = body
 			.replace(/^#+\s+.+$/gm, '') // Remove headings
 			.replace(/<[^>]+>/g, '') // Remove HTML tags
 			.replace(/\n+/g, ' ') // Replace newlines
 			.trim()
-			.slice(0, 500);
+			.slice(0, NoteIndexer.MAX_SUMMARY_LENGTH);
 
 		// Extract inline tags
 		const tagMatches = body.match(/#[\w\u3040-\u309f\u30a0-\u30ff\u4e00-\u9fff]+/g) || [];
 		const inlineTags = tagMatches.map((t) => t.slice(1));
 
-		// Combine frontmatter tags and inline tags
-		const frontmatterTags = frontmatter.tags || [];
+		// Combine frontmatter tags and inline tags using type-safe accessor
+		const frontmatterTags = getFrontmatterStringArray(frontmatter, 'tags');
 		const allTags = [...new Set([...frontmatterTags, ...inlineTags])];
 
 		// Determine type
@@ -220,15 +300,15 @@ export class NoteIndexer {
 		return {
 			path: file.path,
 			title,
-			date: frontmatter.date || this.getFileDate(file),
+			date: getFrontmatterString(frontmatter, 'date', this.getFileDate(file)),
 			summary: summaryText,
 			tags: allTags,
-			category: frontmatter.category || 'life',
+			category: getFrontmatterString(frontmatter, 'category', 'life'),
 			type: type as 'session' | 'entity',
 		};
 	}
 
-	private createEmbeddingText(metadata: VectorMetadata, _body: string): string {
+	private createEmbeddingText(metadata: VectorMetadata): string {
 		const parts = [metadata.title, metadata.summary, metadata.tags.join(' ')];
 
 		return parts.join('\n');

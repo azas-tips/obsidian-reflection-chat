@@ -9,19 +9,26 @@ import { Embedder } from './infrastructure/Embedder';
 import { VectorStore } from './infrastructure/VectorStore';
 import { NoteIndexer } from './infrastructure/NoteIndexer';
 import { ContextRetriever } from './core/ContextRetriever';
+import { setLanguage, getTranslations } from './i18n';
+import { logger } from './utils/logger';
 
 export default class ReflectionChatPlugin extends Plugin {
 	settings: PluginSettings = DEFAULT_SETTINGS;
-	openRouterClient!: OpenRouterClient;
-	chatEngine!: ChatEngine;
-	sessionManager!: SessionManager;
-	embedder!: Embedder;
-	vectorStore!: VectorStore;
-	noteIndexer!: NoteIndexer;
-	contextRetriever!: ContextRetriever;
+	openRouterClient: OpenRouterClient | null = null;
+	chatEngine: ChatEngine | null = null;
+	sessionManager: SessionManager | null = null;
+	embedder: Embedder | null = null;
+	vectorStore: VectorStore | null = null;
+	noteIndexer: NoteIndexer | null = null;
+	contextRetriever: ContextRetriever | null = null;
 
 	async onload() {
 		await this.loadSettings();
+
+		// Set language from settings
+		setLanguage(this.settings.language);
+
+		const t = getTranslations();
 
 		// Initialize components
 		await this.initializeComponents();
@@ -30,14 +37,14 @@ export default class ReflectionChatPlugin extends Plugin {
 		this.registerView(VIEW_TYPE_CHAT, (leaf) => new ChatView(leaf, this));
 
 		// Add ribbon icon
-		this.addRibbonIcon('message-circle', 'Open Reflection Chat', () => {
+		this.addRibbonIcon('message-circle', t.commands.ribbonTooltip, () => {
 			this.activateView();
 		});
 
 		// Add command to open chat
 		this.addCommand({
 			id: 'open-chat',
-			name: 'Open Chat',
+			name: t.commands.openChat,
 			callback: () => {
 				this.activateView();
 			},
@@ -46,7 +53,7 @@ export default class ReflectionChatPlugin extends Plugin {
 		// Add command to reindex notes
 		this.addCommand({
 			id: 'reindex-notes',
-			name: 'Reindex Notes',
+			name: t.commands.reindexNotes,
 			callback: async () => {
 				await this.reindexNotes();
 			},
@@ -124,6 +131,13 @@ export default class ReflectionChatPlugin extends Plugin {
 	}
 
 	private async initializeEmbedding(): Promise<void> {
+		const t = getTranslations();
+
+		if (!this.vectorStore || !this.embedder || !this.noteIndexer) {
+			logger.error('Components not initialized');
+			return;
+		}
+
 		try {
 			// Initialize vector store
 			await this.vectorStore.initialize();
@@ -143,28 +157,112 @@ export default class ReflectionChatPlugin extends Plugin {
 				}
 			}
 		} catch (error) {
-			console.error('Failed to initialize embedding:', error);
+			logger.error(
+				'Failed to initialize embedding:',
+				error instanceof Error ? error : undefined
+			);
+			// Notify user of initialization failure
+			new Notice(t.errors.embeddingLoadFailed);
 		}
 	}
 
 	async reindexNotes(): Promise<void> {
-		new Notice('Indexing notes...');
+		const t = getTranslations();
+
+		if (!this.noteIndexer) {
+			new Notice(t.notices.indexFailed);
+			return;
+		}
+
+		new Notice(t.notices.indexing);
 
 		try {
 			const result = await this.noteIndexer.indexAll();
-			new Notice(`Indexed ${result.indexed} notes (${result.errors} errors)`);
+			new Notice(`${t.notices.indexComplete} (${result.indexed} / ${result.errors} errors)`);
 		} catch (error) {
-			console.error('Reindex error:', error);
-			new Notice('Failed to index notes');
+			logger.error('Reindex error:', error instanceof Error ? error : undefined);
+			new Notice(t.notices.indexFailed);
 		}
 	}
 
 	async loadSettings() {
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+		const loaded = await this.loadData();
+		this.settings = this.validateSettings(Object.assign({}, DEFAULT_SETTINGS, loaded));
+	}
+
+	/**
+	 * Validate and sanitize loaded settings, falling back to defaults for invalid values
+	 */
+	private validateSettings(settings: PluginSettings): PluginSettings {
+		return {
+			openRouterApiKey:
+				typeof settings.openRouterApiKey === 'string' ? settings.openRouterApiKey : '',
+			chatModel:
+				typeof settings.chatModel === 'string'
+					? settings.chatModel
+					: DEFAULT_SETTINGS.chatModel,
+			summaryModel:
+				typeof settings.summaryModel === 'string'
+					? settings.summaryModel
+					: DEFAULT_SETTINGS.summaryModel,
+			embeddingModel:
+				typeof settings.embeddingModel === 'string'
+					? settings.embeddingModel
+					: DEFAULT_SETTINGS.embeddingModel,
+			journalFolder:
+				typeof settings.journalFolder === 'string'
+					? settings.journalFolder
+					: DEFAULT_SETTINGS.journalFolder,
+			entitiesFolder:
+				typeof settings.entitiesFolder === 'string'
+					? settings.entitiesFolder
+					: DEFAULT_SETTINGS.entitiesFolder,
+			contextWindowDays:
+				typeof settings.contextWindowDays === 'number' && settings.contextWindowDays > 0
+					? settings.contextWindowDays
+					: DEFAULT_SETTINGS.contextWindowDays,
+			maxSemanticResults:
+				typeof settings.maxSemanticResults === 'number' && settings.maxSemanticResults > 0
+					? settings.maxSemanticResults
+					: DEFAULT_SETTINGS.maxSemanticResults,
+			systemPrompt:
+				typeof settings.systemPrompt === 'string'
+					? settings.systemPrompt
+					: DEFAULT_SETTINGS.systemPrompt,
+			language:
+				settings.language === 'ja' || settings.language === 'en'
+					? settings.language
+					: DEFAULT_SETTINGS.language,
+			autoIndex:
+				typeof settings.autoIndex === 'boolean'
+					? settings.autoIndex
+					: DEFAULT_SETTINGS.autoIndex,
+		};
 	}
 
 	async saveSettings() {
 		await this.saveData(this.settings);
+
+		// Update language
+		setLanguage(this.settings.language);
+
+		// Refresh chat views to update translations
+		const chatViews = this.app.workspace.getLeavesOfType(VIEW_TYPE_CHAT);
+		for (const leaf of chatViews) {
+			try {
+				const view = leaf.view;
+				// Type-safe check: verify view is a ChatView with refreshUI method
+				if (view && 'refreshUI' in view && typeof view.refreshUI === 'function') {
+					view.refreshUI();
+				}
+			} catch (error) {
+				// Log but don't fail settings save if view refresh fails
+				logger.error(
+					'Failed to refresh ChatView:',
+					error instanceof Error ? error : undefined
+				);
+			}
+		}
 
 		// Update components with new settings
 		if (this.openRouterClient) {

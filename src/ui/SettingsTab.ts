@@ -1,11 +1,14 @@
 import { App, PluginSettingTab, Setting, Notice } from 'obsidian';
 import type ReflectionChatPlugin from '../main';
-import { DEFAULT_SYSTEM_PROMPT } from '../types';
+import { getTranslations, setLanguage, type Language } from '../i18n';
+import { validateFolderPath } from '../utils/sanitize';
+import { logger } from '../utils/logger';
 
 export class SettingsTab extends PluginSettingTab {
 	plugin: ReflectionChatPlugin;
 	private modelOptions: { value: string; label: string }[] = [];
 	private embeddingModelOptions: { value: string; label: string }[] = [];
+	private isFetchingModels = false; // Prevent concurrent fetches
 
 	constructor(app: App, plugin: ReflectionChatPlugin) {
 		super(app, plugin);
@@ -16,14 +19,16 @@ export class SettingsTab extends PluginSettingTab {
 		const { containerEl } = this;
 		containerEl.empty();
 
-		containerEl.createEl('h2', { text: 'Reflection Chat 設定' });
+		const t = getTranslations();
+
+		containerEl.createEl('h2', { text: t.settings.title });
 
 		// API Settings
-		containerEl.createEl('h3', { text: 'API設定' });
+		containerEl.createEl('h3', { text: t.settings.api.heading });
 
 		new Setting(containerEl)
-			.setName('OpenRouter API Key')
-			.setDesc('OpenRouterのAPIキーを入力してください')
+			.setName(t.settings.api.apiKey)
+			.setDesc(t.settings.api.apiKeyDesc)
 			.addText((text) => {
 				text.setPlaceholder('sk-or-...')
 					.setValue(this.plugin.settings.openRouterApiKey)
@@ -36,7 +41,7 @@ export class SettingsTab extends PluginSettingTab {
 				text.inputEl.autocomplete = 'off';
 			})
 			.addButton((button) =>
-				button.setButtonText('テスト接続').onClick(async () => {
+				button.setButtonText(t.settings.api.testConnection).onClick(async () => {
 					await this.testConnection();
 				})
 			);
@@ -47,8 +52,8 @@ export class SettingsTab extends PluginSettingTab {
 		}
 
 		new Setting(containerEl)
-			.setName('対話モデル')
-			.setDesc('チャットに使用するモデル')
+			.setName(t.settings.api.chatModel)
+			.setDesc(t.settings.api.chatModelDesc)
 			.addDropdown((dropdown) => {
 				// Add default options
 				dropdown.addOption('anthropic/claude-sonnet-4.5', 'Claude Sonnet 4.5');
@@ -71,8 +76,8 @@ export class SettingsTab extends PluginSettingTab {
 			});
 
 		new Setting(containerEl)
-			.setName('要約モデル')
-			.setDesc('セッション要約に使用するモデル（軽量なモデル推奨）')
+			.setName(t.settings.api.summaryModel)
+			.setDesc(t.settings.api.summaryModelDesc)
 			.addDropdown((dropdown) => {
 				// Add default options (lightweight models first)
 				dropdown.addOption('anthropic/claude-haiku-4.5', 'Claude Haiku 4.5');
@@ -95,14 +100,26 @@ export class SettingsTab extends PluginSettingTab {
 			});
 
 		new Setting(containerEl)
-			.setName('埋め込みモデル')
-			.setDesc('セマンティック検索に使用する埋め込みモデル')
+			.setName(t.settings.api.embeddingModel)
+			.setDesc(t.settings.api.embeddingModelDesc)
 			.addDropdown((dropdown) => {
 				// Add default embedding model options
-				dropdown.addOption('qwen/qwen3-embedding-8b', 'Qwen3 Embedding 8B (推奨)');
-				dropdown.addOption('qwen/qwen3-embedding-0.6b', 'Qwen3 Embedding 0.6B (軽量)');
-				dropdown.addOption('openai/text-embedding-3-small', 'OpenAI Embedding 3 Small');
-				dropdown.addOption('openai/text-embedding-3-large', 'OpenAI Embedding 3 Large');
+				dropdown.addOption(
+					'qwen/qwen3-embedding-8b',
+					t.settings.api.embeddingModelOptions.qwen8b
+				);
+				dropdown.addOption(
+					'qwen/qwen3-embedding-0.6b',
+					t.settings.api.embeddingModelOptions.qwen06b
+				);
+				dropdown.addOption(
+					'openai/text-embedding-3-small',
+					t.settings.api.embeddingModelOptions.openai3small
+				);
+				dropdown.addOption(
+					'openai/text-embedding-3-large',
+					t.settings.api.embeddingModelOptions.openai3large
+				);
 
 				// Add fetched embedding models
 				for (const model of this.embeddingModelOptions) {
@@ -119,40 +136,68 @@ export class SettingsTab extends PluginSettingTab {
 			});
 
 		// Folder Settings
-		containerEl.createEl('h3', { text: 'フォルダ設定' });
+		containerEl.createEl('h3', { text: t.settings.folders.heading });
 
 		new Setting(containerEl)
-			.setName('セッション保存先')
-			.setDesc('セッションノートを保存するフォルダ')
-			.addText((text) =>
-				text
-					.setPlaceholder('journal')
+			.setName(t.settings.folders.journal)
+			.setDesc(t.settings.folders.journalDesc)
+			.addText((text) => {
+				text.setPlaceholder(t.settings.folders.journalPlaceholder)
 					.setValue(this.plugin.settings.journalFolder)
 					.onChange(async (value) => {
-						this.plugin.settings.journalFolder = value;
+						const validated = validateFolderPath(value);
+						if (validated === null) {
+							// Invalid path or empty - show error and reset to last valid value
+							if (value.trim() !== '') {
+								new Notice(t.notices.invalidFolderPath);
+							}
+							text.setValue(this.plugin.settings.journalFolder);
+							return;
+						}
+						// Check for folder conflict
+						if (validated === this.plugin.settings.entitiesFolder) {
+							new Notice(t.notices.folderConflict);
+							text.setValue(this.plugin.settings.journalFolder);
+							return;
+						}
+						this.plugin.settings.journalFolder = validated;
 						await this.plugin.saveSettings();
-					})
-			);
+					});
+			});
 
 		new Setting(containerEl)
-			.setName('エンティティ保存先')
-			.setDesc('人物・プロジェクト・書籍などのエンティティノートを保存するフォルダ')
-			.addText((text) =>
-				text
-					.setPlaceholder('entities')
+			.setName(t.settings.folders.entities)
+			.setDesc(t.settings.folders.entitiesDesc)
+			.addText((text) => {
+				text.setPlaceholder(t.settings.folders.entitiesPlaceholder)
 					.setValue(this.plugin.settings.entitiesFolder)
 					.onChange(async (value) => {
-						this.plugin.settings.entitiesFolder = value;
+						const validated = validateFolderPath(value);
+						if (validated === null) {
+							// Invalid path or empty - show error and reset to last valid value
+							if (value.trim() !== '') {
+								new Notice(t.notices.invalidFolderPath);
+							}
+							text.setValue(this.plugin.settings.entitiesFolder);
+							return;
+						}
+						// Check for folder conflict
+						if (validated === this.plugin.settings.journalFolder) {
+							new Notice(t.notices.folderConflict);
+							text.setValue(this.plugin.settings.entitiesFolder);
+							return;
+						}
+						this.plugin.settings.entitiesFolder = validated;
 						await this.plugin.saveSettings();
-					})
-			);
+					});
+			});
 
 		// Context Settings
-		containerEl.createEl('h3', { text: '文脈設定' });
+		containerEl.createEl('h3', { text: t.settings.context.heading });
 
 		new Setting(containerEl)
-			.setName('直近参照日数')
-			.setDesc('直近の何日分のノートを参照するか')
+			.setName(t.settings.context.windowDays)
+			.setDesc(t.settings.context.windowDaysDesc)
 			.addSlider((slider) =>
 				slider
 					.setLimits(1, 30, 1)
@@ -165,8 +210,8 @@ export class SettingsTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
-			.setName('類似検索件数')
-			.setDesc('意味的に類似したノートを何件取得するか')
+			.setName(t.settings.context.semanticResults)
+			.setDesc(t.settings.context.semanticResultsDesc)
 			.addSlider((slider) =>
 				slider
 					.setLimits(1, 20, 1)
@@ -179,16 +224,20 @@ export class SettingsTab extends PluginSettingTab {
 			);
 
 		// Prompt Settings
-		containerEl.createEl('h3', { text: 'プロンプト' });
+		containerEl.createEl('h3', { text: t.settings.prompts.heading });
 
 		new Setting(containerEl)
-			.setName('システムプロンプト')
-			.setDesc('AIコーチの振る舞いを定義するプロンプト')
+			.setName(t.settings.prompts.systemPrompt)
+			.setDesc(t.settings.prompts.systemPromptDesc)
 			.addTextArea((text) => {
-				text.setPlaceholder('システムプロンプトを入力...')
-					.setValue(this.plugin.settings.systemPrompt)
+				// Show translated default if empty
+				const displayValue = this.plugin.settings.systemPrompt || t.prompts.system;
+				text.setPlaceholder(t.settings.prompts.systemPromptPlaceholder)
+					.setValue(displayValue)
 					.onChange(async (value) => {
-						this.plugin.settings.systemPrompt = value;
+						// If user clears the field or sets it back to default, store empty
+						const isDefault = value === t.prompts.system;
+						this.plugin.settings.systemPrompt = isDefault ? '' : value;
 						await this.plugin.saveSettings();
 					});
 				text.inputEl.rows = 10;
@@ -196,19 +245,36 @@ export class SettingsTab extends PluginSettingTab {
 			});
 
 		new Setting(containerEl).addButton((button) =>
-			button.setButtonText('デフォルトに戻す').onClick(async () => {
-				this.plugin.settings.systemPrompt = DEFAULT_SYSTEM_PROMPT;
+			button.setButtonText(t.settings.prompts.resetDefault).onClick(async () => {
+				// Reset to empty (meaning use language default)
+				this.plugin.settings.systemPrompt = '';
 				await this.plugin.saveSettings();
 				this.display();
 			})
 		);
 
 		// Other Settings
-		containerEl.createEl('h3', { text: 'その他' });
+		containerEl.createEl('h3', { text: t.settings.other.heading });
 
 		new Setting(containerEl)
-			.setName('自動インデックス')
-			.setDesc('ノート保存時に自動でインデックスを更新する')
+			.setName(t.settings.other.language)
+			.setDesc(t.settings.other.languageDesc)
+			.addDropdown((dropdown) => {
+				dropdown.addOption('ja', '日本語');
+				dropdown.addOption('en', 'English');
+				dropdown.setValue(this.plugin.settings.language);
+				dropdown.onChange(async (value) => {
+					this.plugin.settings.language = value as Language;
+					setLanguage(value as Language);
+					await this.plugin.saveSettings();
+					// Refresh the settings page
+					this.display();
+				});
+			});
+
+		new Setting(containerEl)
+			.setName(t.settings.other.autoIndex)
+			.setDesc(t.settings.other.autoIndexDesc)
 			.addToggle((toggle) =>
 				toggle.setValue(this.plugin.settings.autoIndex).onChange(async (value) => {
 					this.plugin.settings.autoIndex = value;
@@ -217,18 +283,22 @@ export class SettingsTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
-			.setName('ノートを再インデックス')
-			.setDesc('すべてのノートのインデックスを再構築します')
+			.setName(t.settings.other.reindex)
+			.setDesc(t.settings.other.reindexDesc)
 			.addButton((button) =>
-				button.setButtonText('再インデックス').onClick(async () => {
-					new Notice('インデックスを再構築中...');
-					// TODO: Implement reindex
-					new Notice('インデックスの再構築が完了しました');
+				button.setButtonText(t.settings.other.reindexButton).onClick(async () => {
+					await this.plugin.reindexNotes();
 				})
 			);
 	}
 
 	private async testConnection(): Promise<void> {
+		if (!this.plugin.openRouterClient) {
+			const t = getTranslations();
+			new Notice(t.errors.notInitialized);
+			return;
+		}
+
 		const result = await this.plugin.openRouterClient.testConnection();
 		new Notice(result.message);
 
@@ -239,46 +309,48 @@ export class SettingsTab extends PluginSettingTab {
 	}
 
 	private async fetchModels(): Promise<void> {
-		if (!this.plugin.settings.openRouterApiKey) {
+		if (!this.plugin.openRouterClient?.isConfigured()) {
 			return;
 		}
 
+		// Prevent concurrent fetches
+		if (this.isFetchingModels) {
+			return;
+		}
+
+		this.isFetchingModels = true;
+
 		try {
-			const response = await fetch('https://openrouter.ai/api/v1/models', {
-				headers: {
-					Authorization: `Bearer ${this.plugin.settings.openRouterApiKey}`,
-				},
-			});
+			// Use OpenRouterClient to avoid duplicating API key handling
+			const models = await this.plugin.openRouterClient.fetchModels();
 
-			if (response.ok) {
-				const data = await response.json();
+			// Chat/Summary models
+			this.modelOptions = models
+				.filter((model) => {
+					// Filter streaming-capable models
+					return (
+						model.id.includes('claude') ||
+						model.id.includes('gpt') ||
+						model.id.includes('gemini')
+					);
+				})
+				.map((model) => ({
+					value: model.id,
+					label: model.name || model.id,
+				}))
+				.slice(0, 20);
 
-				// Chat/Summary models
-				this.modelOptions = data.data
-					.filter((model: any) => {
-						// Filter streaming-capable models
-						return (
-							model.id.includes('claude') ||
-							model.id.includes('gpt') ||
-							model.id.includes('gemini')
-						);
-					})
-					.map((model: any) => ({
-						value: model.id,
-						label: model.name || model.id,
-					}))
-					.slice(0, 20);
-
-				// Embedding models
-				this.embeddingModelOptions = data.data
-					.filter((model: any) => model.id.includes('embedding'))
-					.map((model: any) => ({
-						value: model.id,
-						label: model.name || model.id,
-					}));
-			}
+			// Embedding models
+			this.embeddingModelOptions = models
+				.filter((model) => model.id.includes('embedding'))
+				.map((model) => ({
+					value: model.id,
+					label: model.name || model.id,
+				}));
 		} catch (error) {
-			console.error('Failed to fetch models:', error);
+			logger.error('Failed to fetch models:', error instanceof Error ? error : undefined);
+		} finally {
+			this.isFetchingModels = false;
 		}
 	}
 }
