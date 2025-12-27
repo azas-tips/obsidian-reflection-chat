@@ -195,6 +195,13 @@ export class ChatEngine {
 
 	private static readonly VALID_SENTIMENTS = ['positive', 'negative', 'conflicted'] as const;
 
+	// Limits to prevent DoS from malicious/buggy LLM responses
+	private static readonly MAX_ENTITIES = 50;
+	private static readonly MAX_RELATIONS = 50;
+	private static readonly MAX_VALUES = 50;
+	private static readonly MAX_TAGS = 20;
+	private static readonly MAX_STRING_ITEMS = 20; // For decisions, insights
+
 	/**
 	 * Validate and sanitize parsed summary response to ensure type safety
 	 */
@@ -210,11 +217,12 @@ export class ChatEngine {
 			return typeof obj[key] === 'string' ? (obj[key] as string) : defaultVal;
 		};
 
-		// Validate and extract string array
-		const getStringArray = (key: string): string[] => {
+		// Validate and extract string array with limit
+		const getStringArray = (key: string, limit: number): string[] => {
 			const arr = obj[key];
 			if (!Array.isArray(arr)) return [];
-			return arr.filter((item): item is string => typeof item === 'string');
+			const filtered = arr.filter((item): item is string => typeof item === 'string');
+			return filtered.slice(0, limit);
 		};
 
 		// Validate category against allowed values
@@ -245,6 +253,7 @@ export class ChatEngine {
 		}> = [];
 		if (Array.isArray(obj.entities)) {
 			for (const e of obj.entities) {
+				if (entities.length >= ChatEngine.MAX_ENTITIES) break; // Enforce limit
 				if (typeof e !== 'object' || e === null) continue;
 				const record = e as Record<string, unknown>;
 				const name = typeof record.name === 'string' ? record.name : '';
@@ -267,6 +276,7 @@ export class ChatEngine {
 		}> = [];
 		if (Array.isArray(obj.relations)) {
 			for (const r of obj.relations) {
+				if (relations.length >= ChatEngine.MAX_RELATIONS) break; // Enforce limit
 				if (typeof r !== 'object' || r === null) continue;
 				const record = r as Record<string, unknown>;
 				const from = typeof record.from === 'string' ? record.from : '';
@@ -300,6 +310,7 @@ export class ChatEngine {
 		}> = [];
 		if (Array.isArray(obj.values)) {
 			for (const v of obj.values) {
+				if (values.length >= ChatEngine.MAX_VALUES) break; // Enforce limit
 				if (typeof v !== 'object' || v === null) continue;
 				const record = v as Record<string, unknown>;
 				const value = typeof record.value === 'string' ? record.value : '';
@@ -314,10 +325,10 @@ export class ChatEngine {
 
 		return {
 			summary: getString('summary', ''),
-			tags: getStringArray('tags'),
+			tags: getStringArray('tags', ChatEngine.MAX_TAGS),
 			category: validCategory,
-			decisions: getStringArray('decisions'),
-			insights: getStringArray('insights'),
+			decisions: getStringArray('decisions', ChatEngine.MAX_STRING_ITEMS),
+			insights: getStringArray('insights', ChatEngine.MAX_STRING_ITEMS),
 			entities,
 			relations,
 			values,

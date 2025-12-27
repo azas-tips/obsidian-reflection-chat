@@ -259,6 +259,28 @@ export class VectorStore {
 		);
 	}
 
+	/**
+	 * Validate vector for upsert - stricter check with full element validation
+	 */
+	private isValidVectorForUpsert(vector: unknown): vector is number[] {
+		if (!Array.isArray(vector)) {
+			return false;
+		}
+		if (
+			vector.length < VectorStore.MIN_VECTOR_DIMENSION ||
+			vector.length > VectorStore.MAX_VECTOR_DIMENSION
+		) {
+			return false;
+		}
+		// Check all elements for upsert (stricter than load)
+		for (let i = 0; i < vector.length; i++) {
+			if (typeof vector[i] !== 'number' || !Number.isFinite(vector[i])) {
+				return false;
+			}
+		}
+		return true;
+	}
+
 	private static readonly MAX_FILENAME_LENGTH = 100;
 	private static readonly INITIALIZATION_TIMEOUT_MS = 30000; // 30 seconds
 
@@ -449,6 +471,15 @@ export class VectorStore {
 			);
 		}
 
+		// Validate vector dimensions to prevent storing invalid data
+		if (!this.isValidVectorForUpsert(vector)) {
+			// Cast to unknown to get length for error message (type guard narrowed to never)
+			const vectorLen = (vector as unknown as unknown[] | undefined)?.length ?? 0;
+			throw new Error(
+				`Invalid vector: expected ${VectorStore.MIN_VECTOR_DIMENSION}-${VectorStore.MAX_VECTOR_DIMENSION} dimensions, got ${vectorLen}`
+			);
+		}
+
 		this.items.set(id, { id, vector, metadata });
 		this.dirtyItems.add(id);
 		this.deletedItems.delete(id); // In case it was marked for deletion
@@ -490,7 +521,10 @@ export class VectorStore {
 		const results: VectorSearchResult[] = [];
 		let minScoreInResults = -Infinity;
 
-		for (const item of this.items.values()) {
+		// Take a snapshot of items to prevent issues if items are modified during iteration
+		const itemsSnapshot = Array.from(this.items.values());
+
+		for (const item of itemsSnapshot) {
 			// Skip items with invalid vectors (corrupted data)
 			if (!this.isValidVector(item.vector)) {
 				logger.debug(`Skipping item ${item.id} with invalid vector`);

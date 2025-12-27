@@ -43,6 +43,9 @@ export class ChatView extends ItemView {
 	private saveHandler: (() => void) | null = null;
 	private clearHandler: (() => void) | null = null;
 
+	// Dynamic button cleanup tracking (for suggestion buttons and related items)
+	private dynamicClickHandlers: Array<{ element: HTMLElement; handler: () => void }> = [];
+
 	private messages: Message[] = [];
 	private isLoading = false;
 	private isClosed = false; // Prevents operations after view is closed
@@ -130,7 +133,8 @@ export class ChatView extends ItemView {
 
 		// Messages area
 		this.messagesContainer = container.createDiv({ cls: 'reflection-chat-messages' });
-		this.renderEmptyState();
+		// Don't render empty state here - let renderMessages() decide what to render
+		// This prevents duplicate rendering when refreshUI() calls both onOpen() and renderMessages()
 
 		// Related notes panel (hidden initially)
 		this.relatedPanel = container.createDiv({ cls: 'reflection-chat-related' });
@@ -190,6 +194,9 @@ export class ChatView extends ItemView {
 		this.clearBtn.createSpan({ text: t.ui.clear });
 		this.clearHandler = () => this.clearChat();
 		this.clearBtn.addEventListener('click', this.clearHandler);
+
+		// Render initial state (empty state or existing messages)
+		this.renderMessages();
 	}
 
 	async onClose(): Promise<void> {
@@ -257,6 +264,12 @@ export class ChatView extends ItemView {
 			this.clearBtn.removeEventListener('click', this.clearHandler);
 		}
 
+		// Cleanup dynamic handlers (suggestion buttons, related items)
+		for (const { element, handler } of this.dynamicClickHandlers) {
+			element.removeEventListener('click', handler);
+		}
+		this.dynamicClickHandlers = [];
+
 		// Clear handler references
 		this.inputResizeHandler = null;
 		this.inputKeydownHandler = null;
@@ -298,30 +311,21 @@ export class ChatView extends ItemView {
 	}
 
 	async setState(state: unknown, result: { history: boolean }): Promise<void> {
-		// Type-safe state access without unsafe cast
+		// Type-safe state access - validateChatState handles all validation
+		const rawObj = state as Record<string, unknown> | null;
+		const originalCount = Array.isArray(rawObj?.messages) ? rawObj.messages.length : 0;
+
 		const chatState = this.validateChatState(state);
 		if (chatState?.messages) {
-			const originalCount = chatState.messages.length;
-			// Validate message structure before assignment
-			const validMessages = chatState.messages.filter(
-				(msg): msg is Message =>
-					typeof msg === 'object' &&
-					msg !== null &&
-					typeof msg.id === 'string' &&
-					typeof msg.content === 'string' &&
-					(msg.role === 'user' || msg.role === 'assistant') &&
-					typeof msg.timestamp === 'number'
-			);
-
-			// Warn if messages were filtered out
-			const filteredCount = originalCount - validMessages.length;
+			// Warn if messages were filtered out during validation
+			const filteredCount = originalCount - chatState.messages.length;
 			if (filteredCount > 0) {
 				logger.warn(
 					`setState: ${filteredCount} of ${originalCount} messages were invalid and filtered out`
 				);
 			}
 
-			this.messages = validMessages;
+			this.messages = chatState.messages;
 			// Only render if container is ready (onOpen has completed)
 			if (this.messagesContainer) {
 				this.renderMessages();
@@ -399,12 +403,14 @@ export class ChatView extends ItemView {
 				cls: 'reflection-chat-suggestion-btn',
 				text,
 			});
-			btn.addEventListener('click', () => {
+			const handler = () => {
 				if (this.inputEl) {
 					this.inputEl.value = text;
 					this.inputEl.focus();
 				}
-			});
+			};
+			btn.addEventListener('click', handler);
+			this.dynamicClickHandlers.push({ element: btn, handler });
 		}
 	}
 
@@ -440,32 +446,36 @@ export class ChatView extends ItemView {
 	}
 
 	private renderStreamingMessage(content: string): void {
-		// Double-check: verify view is still valid before any DOM operations
-		if (this.isClosed || !this.messagesContainer) return;
+		// Capture references atomically at the start to prevent race conditions
+		// If view closes during this method, cached references remain valid for this call
+		const container = this.messagesContainer;
+		if (this.isClosed || !container) return;
 
 		// Use cached element to avoid repeated DOM queries
-		if (!this.currentStreamingElement) {
-			// Re-check before DOM creation
+		let streamingEl = this.currentStreamingElement;
+		if (!streamingEl) {
+			// Final check before DOM creation
 			if (this.isClosed) return;
 
-			this.currentStreamingElement = this.messagesContainer.createDiv({
+			streamingEl = container.createDiv({
 				cls: 'reflection-chat-message assistant streaming',
 			});
 
-			const icon = this.currentStreamingElement.createDiv({
+			const icon = streamingEl.createDiv({
 				cls: 'reflection-chat-message-icon',
 			});
 			icon.textContent = '🤖';
 
-			this.currentStreamingElement.createDiv({ cls: 'reflection-chat-message-content' });
+			streamingEl.createDiv({ cls: 'reflection-chat-message-content' });
+
+			// Only cache if view is still open
+			if (!this.isClosed) {
+				this.currentStreamingElement = streamingEl;
+			}
 		}
 
-		// Re-check before content update
-		if (this.isClosed) return;
-
-		const contentEl = this.currentStreamingElement.querySelector(
-			'.reflection-chat-message-content'
-		);
+		// Update content using local reference (safe even if view closes)
+		const contentEl = streamingEl.querySelector('.reflection-chat-message-content');
 		if (contentEl) {
 			contentEl.textContent = content;
 
@@ -477,9 +487,10 @@ export class ChatView extends ItemView {
 			}
 		}
 
-		// Re-check before scroll operation
-		if (this.isClosed || !this.messagesContainer) return;
-		this.messagesContainer.scrollTop = this.messagesContainer.scrollHeight;
+		// Scroll only if view is still open
+		if (!this.isClosed && container) {
+			container.scrollTop = container.scrollHeight;
+		}
 	}
 
 	private finalizeStreamingMessage(): void {
@@ -675,6 +686,9 @@ export class ChatView extends ItemView {
 			return;
 		}
 
+		// Clean up old related item handlers before re-rendering
+		this.cleanupRelatedItemHandlers();
+
 		this.relatedPanel.empty();
 		this.relatedPanel.style.display = 'block';
 
@@ -688,19 +702,42 @@ export class ChatView extends ItemView {
 			const item = items.createDiv({ cls: 'reflection-chat-related-item' });
 			setIcon(item.createSpan(), 'file-text');
 			item.createSpan({ text: match.metadata.title });
-			item.addEventListener('click', () => {
+			const handler = () => {
 				this.app.workspace.openLinkText(match.metadata.path, '', true);
-			});
+			};
+			item.addEventListener('click', handler);
+			this.dynamicClickHandlers.push({ element: item, handler });
 		}
 
 		for (const entity of context.linkedEntities.slice(0, 3)) {
 			const item = items.createDiv({ cls: 'reflection-chat-related-item' });
 			setIcon(item.createSpan(), 'user');
 			item.createSpan({ text: entity.name });
-			item.addEventListener('click', () => {
+			const handler = () => {
 				this.app.workspace.openLinkText(entity.path, '', true);
-			});
+			};
+			item.addEventListener('click', handler);
+			this.dynamicClickHandlers.push({ element: item, handler });
 		}
+	}
+
+	/**
+	 * Clean up related item click handlers before re-rendering
+	 * Removes handlers for elements that are children of relatedPanel
+	 */
+	private cleanupRelatedItemHandlers(): void {
+		if (!this.relatedPanel) return;
+
+		// Filter and remove handlers for elements inside relatedPanel
+		const handlersToKeep: Array<{ element: HTMLElement; handler: () => void }> = [];
+		for (const entry of this.dynamicClickHandlers) {
+			if (this.relatedPanel.contains(entry.element)) {
+				entry.element.removeEventListener('click', entry.handler);
+			} else {
+				handlersToKeep.push(entry);
+			}
+		}
+		this.dynamicClickHandlers = handlersToKeep;
 	}
 
 	private async saveSession(): Promise<void> {
@@ -771,6 +808,7 @@ export class ChatView extends ItemView {
 
 	/**
 	 * Type guard for validating ChatViewState from unknown state
+	 * Validates and filters each message in the array
 	 */
 	private validateChatState(state: unknown): ChatViewState | null {
 		if (typeof state !== 'object' || state === null) {
@@ -780,6 +818,19 @@ export class ChatView extends ItemView {
 		if (!Array.isArray(obj.messages)) {
 			return null;
 		}
-		return { messages: obj.messages as Message[] };
+
+		// Validate each message in the array
+		const validMessages = obj.messages.filter(
+			(msg): msg is Message =>
+				typeof msg === 'object' &&
+				msg !== null &&
+				typeof (msg as Record<string, unknown>).id === 'string' &&
+				typeof (msg as Record<string, unknown>).content === 'string' &&
+				((msg as Record<string, unknown>).role === 'user' ||
+					(msg as Record<string, unknown>).role === 'assistant') &&
+				typeof (msg as Record<string, unknown>).timestamp === 'number'
+		);
+
+		return { messages: validMessages };
 	}
 }
