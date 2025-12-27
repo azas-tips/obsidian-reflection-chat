@@ -1,7 +1,7 @@
 {
 	"id": "reflection-chat",
 	"name": "Reflection Chat",
-	"version": "0.1.4",
+	"version": "0.1.5",
 	"minAppVersion": "1.4.0",
 	"description": "AI coaching conversations that build your personal context graph",
 	"author": "haruki",

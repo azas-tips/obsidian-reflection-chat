@@ -122,6 +122,7 @@ export interface PluginSettings {
 	openRouterApiKey: string;
 	chatModel: string;
 	summaryModel: string;
+	embeddingModel: string;
 
 	// Folders
 	journalFolder: string;
@@ -191,6 +192,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
 	openRouterApiKey: '',
 	chatModel: 'anthropic/claude-sonnet-4.5',
 	summaryModel: 'anthropic/claude-haiku-4.5',
+	embeddingModel: 'qwen/qwen3-embedding-8b',
 	journalFolder: 'journal',
 	entitiesFolder: 'entities',
 	contextWindowDays: 7,

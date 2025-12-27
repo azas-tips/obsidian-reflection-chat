@@ -4,15 +4,20 @@
  */
 export class Embedder {
 	private apiKey: string;
-	private model = 'qwen/qwen3-embedding-0.6b'; // Multilingual, lightweight
+	private model: string;
 	private initialized = false;
 
-	constructor(apiKey: string) {
+	constructor(apiKey: string, model: string) {
 		this.apiKey = apiKey;
+		this.model = model;
 	}
 
 	setApiKey(apiKey: string): void {
 		this.apiKey = apiKey;
+	}
+
+	setModel(model: string): void {
+		this.model = model;
 	}
 
 	async initialize(): Promise<void> {

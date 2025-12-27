@@ -93,6 +93,23 @@ export class SettingsTab extends PluginSettingTab {
 				});
 			});
 
+		new Setting(containerEl)
+			.setName('埋め込みモデル')
+			.setDesc('セマンティック検索に使用する埋め込みモデル')
+			.addDropdown((dropdown) => {
+				// Add embedding model options
+				dropdown.addOption('qwen/qwen3-embedding-8b', 'Qwen3 Embedding 8B (推奨)');
+				dropdown.addOption('qwen/qwen3-embedding-0.6b', 'Qwen3 Embedding 0.6B (軽量)');
+				dropdown.addOption('openai/text-embedding-3-small', 'OpenAI Embedding 3 Small');
+				dropdown.addOption('openai/text-embedding-3-large', 'OpenAI Embedding 3 Large');
+
+				dropdown.setValue(this.plugin.settings.embeddingModel);
+				dropdown.onChange(async (value) => {
+					this.plugin.settings.embeddingModel = value;
+					await this.plugin.saveSettings();
+				});
+			});
+
 		// Folder Settings
 		containerEl.createEl('h3', { text: 'フォルダ設定' });
 
