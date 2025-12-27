@@ -301,6 +301,13 @@ export interface ChatMessage {
 	content: string;
 }
 
+// Model Info for session recording
+export interface ModelInfo {
+	chatModel: string;
+	summaryModel: string;
+	embeddingModel: string;
+}
+
 // Streaming Chunk
 export interface StreamChunk {
 	choices: {

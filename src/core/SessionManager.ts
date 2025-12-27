@@ -6,6 +6,7 @@ import type {
 	SessionSummary,
 	ExtractedEntity,
 	ConversationContext,
+	ModelInfo,
 } from '../types';
 
 export class SessionManager {
@@ -55,7 +56,7 @@ export class SessionManager {
 		}
 	}
 
-	async saveSession(summary: SessionSummary): Promise<TFile | null> {
+	async saveSession(summary: SessionSummary, modelInfo?: ModelInfo): Promise<TFile | null> {
 		if (!this.currentSession || this.currentSession.messages.length === 0) {
 			return null;
 		}
@@ -64,7 +65,7 @@ export class SessionManager {
 		await this.ensureFolder(this.journalFolder);
 
 		// Generate note content
-		const content = this.formatSessionNote(this.currentSession, summary);
+		const content = this.formatSessionNote(this.currentSession, summary, modelInfo);
 
 		// Generate file path
 		const date = new Date();
@@ -130,20 +131,33 @@ export class SessionManager {
 		}
 	}
 
-	private formatSessionNote(session: Session, summary: SessionSummary): string {
+	private formatSessionNote(
+		session: Session,
+		summary: SessionSummary,
+		modelInfo?: ModelInfo
+	): string {
 		const date = new Date(session.startedAt);
 		const dateStr = this.formatDate(date);
 		const timeStr = this.formatTime(date);
 
-		const frontmatter = [
+		const frontmatterLines = [
 			'---',
 			`date: ${dateStr}`,
 			'type: session',
 			`category: ${summary.category}`,
 			`tags: [${summary.tags.join(', ')}]`,
 			`entities: [${summary.entities.map((e) => e.name).join(', ')}]`,
-			'---',
-		].join('\n');
+		];
+
+		// Add model info if provided
+		if (modelInfo) {
+			frontmatterLines.push(`chat_model: ${modelInfo.chatModel}`);
+			frontmatterLines.push(`summary_model: ${modelInfo.summaryModel}`);
+			frontmatterLines.push(`embedding_model: ${modelInfo.embeddingModel}`);
+		}
+
+		frontmatterLines.push('---');
+		const frontmatter = frontmatterLines.join('\n');
 
 		const body = this.formatSessionSection(session, summary, timeStr);
 

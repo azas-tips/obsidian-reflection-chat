@@ -465,7 +465,12 @@ export class ChatView extends ItemView {
 				this.plugin.sessionManager.addMessage(msg);
 			}
 
-			const file = await this.plugin.sessionManager.saveSession(summary);
+			const modelInfo = {
+				chatModel: this.plugin.settings.chatModel,
+				summaryModel: this.plugin.settings.summaryModel,
+				embeddingModel: this.plugin.settings.embeddingModel,
+			};
+			const file = await this.plugin.sessionManager.saveSession(summary, modelInfo);
 
 			if (file) {
 				new Notice('セッションを保存しました');
