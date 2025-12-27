@@ -337,7 +337,7 @@ export class VectorStore {
 		for (let i = 0; i < str.length; i++) {
 			const char = str.charCodeAt(i);
 			hash = (hash << 5) - hash + char;
-			hash = hash & hash; // Convert to 32bit integer
+			// Bitwise shift above already converts to 32-bit signed integer
 		}
 		return Math.abs(hash).toString(16);
 	}
