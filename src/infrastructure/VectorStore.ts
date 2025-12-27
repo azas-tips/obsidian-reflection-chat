@@ -1,4 +1,4 @@
-import { App, TFile } from 'obsidian';
+import { App, TFile, TFolder } from 'obsidian';
 
 export interface VectorMetadata {
 	path: string;
@@ -22,92 +22,114 @@ export interface VectorSearchResult {
 	metadata: VectorMetadata;
 }
 
-interface VectorIndex {
-	version: number;
-	items: VectorItem[];
-}
-
 /**
  * Browser-compatible vector store using Obsidian's vault API
- * Stores vectors in a JSON file within the plugin folder
+ * Stores each vector in a separate JSON file for better scalability
  */
 export class VectorStore {
 	private app: App;
-	private indexPath: string;
+	private vectorsDir: string;
 	private items: Map<string, VectorItem> = new Map();
+	private dirtyItems: Set<string> = new Set(); // Track which items need saving
+	private deletedItems: Set<string> = new Set(); // Track deleted items
 	private initialized = false;
-	private dirty = false;
 	private saveTimeout: ReturnType<typeof setTimeout> | null = null;
 
-	private static readonly INDEX_VERSION = 1;
 	private static readonly SAVE_DEBOUNCE_MS = 1000;
+	private static readonly LEGACY_INDEX_FILE = 'vector-index.json';
 
 	constructor(app: App, basePath: string) {
 		this.app = app;
-		// Store index in plugin folder as JSON
-		this.indexPath = basePath.endsWith('/')
-			? `${basePath}vector-index.json`
-			: `${basePath}/vector-index.json`;
+		this.vectorsDir = basePath.endsWith('/')
+			? `${basePath}vectors`
+			: `${basePath}/vectors`;
 	}
 
 	async initialize(): Promise<void> {
 		if (this.initialized) return;
 
 		try {
-			await this.loadIndex();
+			// Ensure vectors directory exists
+			await this.ensureDirectory(this.vectorsDir);
+
+			// Check for legacy single-file format and migrate if needed
+			await this.migrateFromLegacyFormat();
+
+			// Load all vector files
+			await this.loadAllVectors();
+
 			this.initialized = true;
 			console.log('Vector store initialized with', this.items.size, 'items');
 		} catch (error) {
 			console.error('Failed to initialize vector store:', error);
-			// Start with empty index
 			this.items = new Map();
 			this.initialized = true;
 		}
 	}
 
-	private async loadIndex(): Promise<void> {
-		try {
-			const file = this.app.vault.getAbstractFileByPath(this.indexPath);
-			if (file instanceof TFile) {
-				const content = await this.app.vault.read(file);
-				const index: VectorIndex = JSON.parse(content);
+	private async migrateFromLegacyFormat(): Promise<void> {
+		const basePath = this.vectorsDir.substring(0, this.vectorsDir.lastIndexOf('/'));
+		const legacyPath = `${basePath}/${VectorStore.LEGACY_INDEX_FILE}`;
 
-				// Version check for future migrations
-				if (index.version === VectorStore.INDEX_VERSION) {
-					this.items = new Map(index.items.map((item) => [item.id, item]));
-				} else {
-					console.log('Vector index version mismatch, starting fresh');
-					this.items = new Map();
+		const legacyFile = this.app.vault.getAbstractFileByPath(legacyPath);
+		if (!(legacyFile instanceof TFile)) {
+			return; // No legacy file, nothing to migrate
+		}
+
+		console.log('Migrating from legacy vector-index.json format...');
+
+		try {
+			const content = await this.app.vault.read(legacyFile);
+			const legacyData = JSON.parse(content);
+
+			if (legacyData.items && Array.isArray(legacyData.items)) {
+				// Save each item as individual file
+				for (const item of legacyData.items) {
+					const fileName = this.getFileNameForId(item.id);
+					const filePath = `${this.vectorsDir}/${fileName}`;
+					await this.app.vault.create(filePath, JSON.stringify(item));
 				}
+
+				console.log(`Migrated ${legacyData.items.length} vectors to individual files`);
+
+				// Delete legacy file
+				await this.app.vault.delete(legacyFile);
+				console.log('Deleted legacy vector-index.json');
 			}
-		} catch {
-			// File doesn't exist or is invalid, start fresh
-			this.items = new Map();
+		} catch (error) {
+			console.error('Migration failed:', error);
 		}
 	}
 
-	private async saveIndex(): Promise<void> {
-		const index: VectorIndex = {
-			version: VectorStore.INDEX_VERSION,
-			items: Array.from(this.items.values()),
-		};
-
-		const content = JSON.stringify(index);
-
-		try {
-			const file = this.app.vault.getAbstractFileByPath(this.indexPath);
-			if (file instanceof TFile) {
-				await this.app.vault.modify(file, content);
-			} else {
-				// Create new file - ensure directory exists
-				const dirPath = this.indexPath.substring(0, this.indexPath.lastIndexOf('/'));
-				await this.ensureDirectory(dirPath);
-				await this.app.vault.create(this.indexPath, content);
-			}
-		} catch (error) {
-			console.error('Failed to save vector index:', error);
-			throw error;
+	private async loadAllVectors(): Promise<void> {
+		const folder = this.app.vault.getAbstractFileByPath(this.vectorsDir);
+		if (!(folder instanceof TFolder)) {
+			return;
 		}
+
+		for (const file of folder.children) {
+			if (file instanceof TFile && file.extension === 'json') {
+				try {
+					const content = await this.app.vault.read(file);
+					const item: VectorItem = JSON.parse(content);
+					if (item.id && item.vector && item.metadata) {
+						this.items.set(item.id, item);
+					}
+				} catch (error) {
+					console.error(`Failed to load vector file ${file.path}:`, error);
+				}
+			}
+		}
+	}
+
+	private getFileNameForId(id: string): string {
+		// Create a safe filename from the id
+		// Replace special characters that might cause issues
+		const safeId = id
+			.replace(/[/\\:*?"<>|]/g, '_')
+			.replace(/\s+/g, '_')
+			.substring(0, 100); // Limit length
+		return `${safeId}.json`;
 	}
 
 	private async ensureDirectory(path: string): Promise<void> {
@@ -115,7 +137,6 @@ export class VectorStore {
 
 		const folder = this.app.vault.getAbstractFileByPath(path);
 		if (!folder) {
-			// Create parent directories recursively
 			const parentPath = path.substring(0, path.lastIndexOf('/'));
 			if (parentPath) {
 				await this.ensureDirectory(parentPath);
@@ -129,16 +150,60 @@ export class VectorStore {
 	}
 
 	private scheduleSave(): void {
-		this.dirty = true;
 		if (this.saveTimeout) {
 			clearTimeout(this.saveTimeout);
 		}
 		this.saveTimeout = setTimeout(async () => {
-			if (this.dirty) {
-				await this.saveIndex();
-				this.dirty = false;
-			}
+			await this.saveChanges();
 		}, VectorStore.SAVE_DEBOUNCE_MS);
+	}
+
+	private async saveChanges(): Promise<void> {
+		// Save dirty items
+		for (const id of this.dirtyItems) {
+			const item = this.items.get(id);
+			if (item) {
+				await this.saveItem(item);
+			}
+		}
+		this.dirtyItems.clear();
+
+		// Delete removed items
+		for (const id of this.deletedItems) {
+			await this.deleteItemFile(id);
+		}
+		this.deletedItems.clear();
+	}
+
+	private async saveItem(item: VectorItem): Promise<void> {
+		const fileName = this.getFileNameForId(item.id);
+		const filePath = `${this.vectorsDir}/${fileName}`;
+		const content = JSON.stringify(item);
+
+		try {
+			const file = this.app.vault.getAbstractFileByPath(filePath);
+			if (file instanceof TFile) {
+				await this.app.vault.modify(file, content);
+			} else {
+				await this.app.vault.create(filePath, content);
+			}
+		} catch (error) {
+			console.error(`Failed to save vector ${item.id}:`, error);
+		}
+	}
+
+	private async deleteItemFile(id: string): Promise<void> {
+		const fileName = this.getFileNameForId(id);
+		const filePath = `${this.vectorsDir}/${fileName}`;
+
+		try {
+			const file = this.app.vault.getAbstractFileByPath(filePath);
+			if (file instanceof TFile) {
+				await this.app.vault.delete(file);
+			}
+		} catch (error) {
+			console.error(`Failed to delete vector file ${id}:`, error);
+		}
 	}
 
 	async upsert(id: string, vector: number[], metadata: VectorMetadata): Promise<void> {
@@ -147,6 +212,8 @@ export class VectorStore {
 		}
 
 		this.items.set(id, { id, vector, metadata });
+		this.dirtyItems.add(id);
+		this.deletedItems.delete(id); // In case it was marked for deletion
 		this.scheduleSave();
 	}
 
@@ -162,12 +229,10 @@ export class VectorStore {
 		const results: VectorSearchResult[] = [];
 
 		for (const item of this.items.values()) {
-			// Apply filter
 			if (filter && !this.matchesFilter(item.metadata, filter)) {
 				continue;
 			}
 
-			// Calculate cosine similarity
 			const score = this.cosineSimilarity(queryVector, item.vector);
 			results.push({
 				id: item.id,
@@ -176,7 +241,6 @@ export class VectorStore {
 			});
 		}
 
-		// Sort by score descending and return top results
 		return results.sort((a, b) => b.score - a.score).slice(0, limit);
 	}
 
@@ -222,6 +286,8 @@ export class VectorStore {
 		}
 
 		if (this.items.delete(id)) {
+			this.dirtyItems.delete(id);
+			this.deletedItems.add(id);
 			this.scheduleSave();
 		}
 	}
@@ -246,8 +312,14 @@ export class VectorStore {
 			throw new Error('VectorStore not initialized');
 		}
 
+		// Mark all items for deletion
+		for (const id of this.items.keys()) {
+			this.deletedItems.add(id);
+		}
 		this.items.clear();
-		await this.saveIndex();
+		this.dirtyItems.clear();
+
+		await this.saveChanges();
 	}
 
 	async getStats(): Promise<{ count: number }> {
@@ -266,9 +338,6 @@ export class VectorStore {
 			clearTimeout(this.saveTimeout);
 			this.saveTimeout = null;
 		}
-		if (this.dirty) {
-			await this.saveIndex();
-			this.dirty = false;
-		}
+		await this.saveChanges();
 	}
 }
