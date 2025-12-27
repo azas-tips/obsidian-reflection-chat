@@ -1,4 +1,4 @@
-import { LocalIndex } from 'vectra';
+import { App, TFile } from 'obsidian';
 
 export interface VectorMetadata {
 	path: string;
@@ -10,62 +10,144 @@ export interface VectorMetadata {
 	type: 'session' | 'entity';
 }
 
+export interface VectorItem {
+	id: string;
+	vector: number[];
+	metadata: VectorMetadata;
+}
+
 export interface VectorSearchResult {
 	id: string;
 	score: number;
 	metadata: VectorMetadata;
 }
 
-export class VectorStore {
-	private index: LocalIndex | null = null;
-	private indexPath: string;
+interface VectorIndex {
+	version: number;
+	items: VectorItem[];
+}
 
-	constructor(basePath: string) {
-		// Use simple string concatenation instead of path.join for browser compatibility
-		this.indexPath = basePath.endsWith('/') ? `${basePath}vectors` : `${basePath}/vectors`;
+/**
+ * Browser-compatible vector store using Obsidian's vault API
+ * Stores vectors in a JSON file within the plugin folder
+ */
+export class VectorStore {
+	private app: App;
+	private indexPath: string;
+	private items: Map<string, VectorItem> = new Map();
+	private initialized = false;
+	private dirty = false;
+	private saveTimeout: ReturnType<typeof setTimeout> | null = null;
+
+	private static readonly INDEX_VERSION = 1;
+	private static readonly SAVE_DEBOUNCE_MS = 1000;
+
+	constructor(app: App, basePath: string) {
+		this.app = app;
+		// Store index in plugin folder as JSON
+		this.indexPath = basePath.endsWith('/')
+			? `${basePath}vector-index.json`
+			: `${basePath}/vector-index.json`;
 	}
 
 	async initialize(): Promise<void> {
-		if (this.index) return;
+		if (this.initialized) return;
 
 		try {
-			this.index = new LocalIndex(this.indexPath);
-
-			// Check if index exists, create if not
-			if (!(await this.index.isIndexCreated())) {
-				await this.index.createIndex();
-				console.log('Vector index created at:', this.indexPath);
-			}
+			await this.loadIndex();
+			this.initialized = true;
+			console.log('Vector store initialized with', this.items.size, 'items');
 		} catch (error) {
 			console.error('Failed to initialize vector store:', error);
+			// Start with empty index
+			this.items = new Map();
+			this.initialized = true;
+		}
+	}
+
+	private async loadIndex(): Promise<void> {
+		try {
+			const file = this.app.vault.getAbstractFileByPath(this.indexPath);
+			if (file instanceof TFile) {
+				const content = await this.app.vault.read(file);
+				const index: VectorIndex = JSON.parse(content);
+
+				// Version check for future migrations
+				if (index.version === VectorStore.INDEX_VERSION) {
+					this.items = new Map(index.items.map((item) => [item.id, item]));
+				} else {
+					console.log('Vector index version mismatch, starting fresh');
+					this.items = new Map();
+				}
+			}
+		} catch {
+			// File doesn't exist or is invalid, start fresh
+			this.items = new Map();
+		}
+	}
+
+	private async saveIndex(): Promise<void> {
+		const index: VectorIndex = {
+			version: VectorStore.INDEX_VERSION,
+			items: Array.from(this.items.values()),
+		};
+
+		const content = JSON.stringify(index);
+
+		try {
+			const file = this.app.vault.getAbstractFileByPath(this.indexPath);
+			if (file instanceof TFile) {
+				await this.app.vault.modify(file, content);
+			} else {
+				// Create new file - ensure directory exists
+				const dirPath = this.indexPath.substring(0, this.indexPath.lastIndexOf('/'));
+				await this.ensureDirectory(dirPath);
+				await this.app.vault.create(this.indexPath, content);
+			}
+		} catch (error) {
+			console.error('Failed to save vector index:', error);
 			throw error;
 		}
 	}
 
+	private async ensureDirectory(path: string): Promise<void> {
+		if (!path || path === '.') return;
+
+		const folder = this.app.vault.getAbstractFileByPath(path);
+		if (!folder) {
+			// Create parent directories recursively
+			const parentPath = path.substring(0, path.lastIndexOf('/'));
+			if (parentPath) {
+				await this.ensureDirectory(parentPath);
+			}
+			try {
+				await this.app.vault.createFolder(path);
+			} catch {
+				// Folder might already exist
+			}
+		}
+	}
+
+	private scheduleSave(): void {
+		this.dirty = true;
+		if (this.saveTimeout) {
+			clearTimeout(this.saveTimeout);
+		}
+		this.saveTimeout = setTimeout(async () => {
+			if (this.dirty) {
+				await this.saveIndex();
+				this.dirty = false;
+			}
+		}, VectorStore.SAVE_DEBOUNCE_MS);
+	}
+
 	async upsert(id: string, vector: number[], metadata: VectorMetadata): Promise<void> {
-		if (!this.index) {
+		if (!this.initialized) {
 			throw new Error('VectorStore not initialized');
 		}
 
-		try {
-			// Check if item exists
-			const existing = await this.index.getItem(id);
-
-			if (existing) {
-				// Update existing item
-				await this.index.deleteItem(id);
-			}
-
-			// Insert new item
-			await this.index.insertItem({
-				id,
-				vector,
-				metadata: metadata as unknown as Record<string, any>,
-			});
-		} catch (error) {
-			console.error('Upsert error:', error);
-			throw error;
-		}
+		this.items.set(id, { id, vector, metadata });
+		this.scheduleSave();
 	}
 
 	async search(
@@ -73,97 +155,120 @@ export class VectorStore {
 		limit: number = 5,
 		filter?: Partial<VectorMetadata>
 	): Promise<VectorSearchResult[]> {
-		if (!this.index) {
+		if (!this.initialized) {
 			throw new Error('VectorStore not initialized');
 		}
 
-		try {
-			const results = await this.index.queryItems(queryVector, limit * 2);
+		const results: VectorSearchResult[] = [];
 
-			// Apply filter if provided
-			let filtered = results;
-			if (filter) {
-				filtered = results.filter((item) => {
-					const meta = item.item.metadata as unknown as VectorMetadata;
-					for (const [key, value] of Object.entries(filter)) {
-						if (key === 'tags') {
-							// Check if any tag matches
-							const filterTags = value as string[];
-							const itemTags = meta.tags || [];
-							if (!filterTags.some((t) => itemTags.includes(t))) {
-								return false;
-							}
-						} else if (meta[key as keyof VectorMetadata] !== value) {
-							return false;
-						}
-					}
-					return true;
-				});
+		for (const item of this.items.values()) {
+			// Apply filter
+			if (filter && !this.matchesFilter(item.metadata, filter)) {
+				continue;
 			}
 
-			return filtered.slice(0, limit).map((item) => ({
-				id: item.item.id,
-				score: item.score,
-				metadata: item.item.metadata as unknown as VectorMetadata,
-			}));
-		} catch (error) {
-			console.error('Search error:', error);
-			throw error;
+			// Calculate cosine similarity
+			const score = this.cosineSimilarity(queryVector, item.vector);
+			results.push({
+				id: item.id,
+				score,
+				metadata: item.metadata,
+			});
 		}
+
+		// Sort by score descending and return top results
+		return results.sort((a, b) => b.score - a.score).slice(0, limit);
+	}
+
+	private matchesFilter(metadata: VectorMetadata, filter: Partial<VectorMetadata>): boolean {
+		for (const [key, value] of Object.entries(filter)) {
+			if (key === 'tags') {
+				const filterTags = value as string[];
+				const itemTags = metadata.tags || [];
+				if (!filterTags.some((t) => itemTags.includes(t))) {
+					return false;
+				}
+			} else if (metadata[key as keyof VectorMetadata] !== value) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private cosineSimilarity(a: number[], b: number[]): number {
+		if (a.length !== b.length) {
+			return 0;
+		}
+
+		let dotProduct = 0;
+		let normA = 0;
+		let normB = 0;
+
+		for (let i = 0; i < a.length; i++) {
+			dotProduct += a[i] * b[i];
+			normA += a[i] * a[i];
+			normB += b[i] * b[i];
+		}
+
+		const magnitude = Math.sqrt(normA) * Math.sqrt(normB);
+		if (magnitude === 0) return 0;
+
+		return dotProduct / magnitude;
 	}
 
 	async delete(id: string): Promise<void> {
-		if (!this.index) {
+		if (!this.initialized) {
 			throw new Error('VectorStore not initialized');
 		}
 
-		try {
-			await this.index.deleteItem(id);
-		} catch (error) {
-			// Ignore if item doesn't exist
-			console.log('Delete warning:', error);
+		if (this.items.delete(id)) {
+			this.scheduleSave();
 		}
 	}
 
 	async getItem(id: string): Promise<VectorSearchResult | null> {
-		if (!this.index) {
+		if (!this.initialized) {
 			throw new Error('VectorStore not initialized');
 		}
 
-		try {
-			const item = await this.index.getItem(id);
-			if (!item) return null;
+		const item = this.items.get(id);
+		if (!item) return null;
 
-			return {
-				id: item.id,
-				score: 1.0,
-				metadata: item.metadata as unknown as VectorMetadata,
-			};
-		} catch {
-			return null;
-		}
+		return {
+			id: item.id,
+			score: 1.0,
+			metadata: item.metadata,
+		};
 	}
 
 	async clear(): Promise<void> {
-		if (!this.index) {
+		if (!this.initialized) {
 			throw new Error('VectorStore not initialized');
 		}
 
-		// Recreate the index
-		await this.index.deleteIndex();
-		await this.index.createIndex();
+		this.items.clear();
+		await this.saveIndex();
 	}
 
 	async getStats(): Promise<{ count: number }> {
-		if (!this.index) {
-			throw new Error('VectorStore not initialized');
+		if (!this.initialized) {
+			return { count: 0 };
 		}
 
-		try {
-			const stats = await this.index.listItems();
-			return { count: stats.length };
-		} catch {
-			return { count: 0 };
+		return { count: this.items.size };
+	}
+
+	/**
+	 * Force save any pending changes (call on plugin unload)
+	 */
+	async flush(): Promise<void> {
+		if (this.saveTimeout) {
+			clearTimeout(this.saveTimeout);
+			this.saveTimeout = null;
+		}
+		if (this.dirty) {
+			await this.saveIndex();
+			this.dirty = false;
 		}
 	}
 }

@@ -25,3 +25,5 @@ npm-debug.log*
 
 # Optional eslint cache
 .eslintcache
+
+reflection-chat-design.md

@@ -59,10 +59,15 @@ export default class ReflectionChatPlugin extends Plugin {
 		this.initializeEmbedding();
 	}
 
-	onunload() {
+	async onunload() {
 		// Cleanup note indexer (event listeners and pending timeouts)
 		if (this.noteIndexer) {
 			this.noteIndexer.destroy();
+		}
+
+		// Flush any pending vector store changes
+		if (this.vectorStore) {
+			await this.vectorStore.flush();
 		}
 
 		// Detach all leaves of our view type
@@ -95,7 +100,7 @@ export default class ReflectionChatPlugin extends Plugin {
 		this.embedder = new Embedder(pluginPath);
 
 		// Initialize Vector Store
-		this.vectorStore = new VectorStore(pluginPath);
+		this.vectorStore = new VectorStore(this.app, pluginPath);
 
 		// Initialize Note Indexer
 		this.noteIndexer = new NoteIndexer(
