@@ -73,9 +73,18 @@ export class SettingsTab extends PluginSettingTab {
 			.setName('要約モデル')
 			.setDesc('セッション要約に使用するモデル（軽量なモデル推奨）')
 			.addDropdown((dropdown) => {
+				// Add default options (lightweight models first)
 				dropdown.addOption('anthropic/claude-haiku-4.5', 'Claude Haiku 4.5');
-				dropdown.addOption('anthropic/claude-sonnet-4.5', 'Claude Sonnet 4.5');
 				dropdown.addOption('openai/gpt-4o-mini', 'GPT-4o Mini');
+				dropdown.addOption('anthropic/claude-sonnet-4.5', 'Claude Sonnet 4.5');
+				dropdown.addOption('openai/gpt-4o', 'GPT-4o');
+
+				// Add fetched models
+				for (const model of this.modelOptions) {
+					if (!dropdown.selectEl.querySelector(`option[value="${model.value}"]`)) {
+						dropdown.addOption(model.value, model.label);
+					}
+				}
 
 				dropdown.setValue(this.plugin.settings.summaryModel);
 				dropdown.onChange(async (value) => {
