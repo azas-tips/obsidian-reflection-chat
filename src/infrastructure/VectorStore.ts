@@ -391,9 +391,14 @@ export class VectorStore {
 		});
 
 		try {
-			// Wait for any previous save to complete
+			// Wait for any previous save to complete (log but don't block on previous errors)
 			// This ensures serialized save operations
-			await previousLock;
+			await previousLock.catch((prevError) => {
+				logger.warn(
+					'Previous save operation failed:',
+					prevError instanceof Error ? prevError : undefined
+				);
+			});
 
 			// Capture items to save/delete (in case new changes come in during save)
 			const itemsToSave = new Set(this.dirtyItems);
