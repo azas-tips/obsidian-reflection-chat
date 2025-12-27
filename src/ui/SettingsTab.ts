@@ -5,6 +5,7 @@ import { DEFAULT_SYSTEM_PROMPT } from '../types';
 export class SettingsTab extends PluginSettingTab {
 	plugin: ReflectionChatPlugin;
 	private modelOptions: { value: string; label: string }[] = [];
+	private embeddingModelOptions: { value: string; label: string }[] = [];
 
 	constructor(app: App, plugin: ReflectionChatPlugin) {
 		super(app, plugin);
@@ -97,11 +98,18 @@ export class SettingsTab extends PluginSettingTab {
 			.setName('埋め込みモデル')
 			.setDesc('セマンティック検索に使用する埋め込みモデル')
 			.addDropdown((dropdown) => {
-				// Add embedding model options
+				// Add default embedding model options
 				dropdown.addOption('qwen/qwen3-embedding-8b', 'Qwen3 Embedding 8B (推奨)');
 				dropdown.addOption('qwen/qwen3-embedding-0.6b', 'Qwen3 Embedding 0.6B (軽量)');
 				dropdown.addOption('openai/text-embedding-3-small', 'OpenAI Embedding 3 Small');
 				dropdown.addOption('openai/text-embedding-3-large', 'OpenAI Embedding 3 Large');
+
+				// Add fetched embedding models
+				for (const model of this.embeddingModelOptions) {
+					if (!dropdown.selectEl.querySelector(`option[value="${model.value}"]`)) {
+						dropdown.addOption(model.value, model.label);
+					}
+				}
 
 				dropdown.setValue(this.plugin.settings.embeddingModel);
 				dropdown.onChange(async (value) => {
@@ -244,6 +252,8 @@ export class SettingsTab extends PluginSettingTab {
 
 			if (response.ok) {
 				const data = await response.json();
+
+				// Chat/Summary models
 				this.modelOptions = data.data
 					.filter((model: any) => {
 						// Filter streaming-capable models
@@ -258,6 +268,14 @@ export class SettingsTab extends PluginSettingTab {
 						label: model.name || model.id,
 					}))
 					.slice(0, 20);
+
+				// Embedding models
+				this.embeddingModelOptions = data.data
+					.filter((model: any) => model.id.includes('embedding'))
+					.map((model: any) => ({
+						value: model.id,
+						label: model.name || model.id,
+					}));
 			}
 		} catch (error) {
 			console.error('Failed to fetch models:', error);
