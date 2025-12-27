@@ -210,6 +210,7 @@ export class Embedder {
 	 * Ensures we don't cut in the middle of a surrogate pair
 	 */
 	private safeTruncate(text: string, maxLength: number): string {
+		if (maxLength <= 0) return '';
 		if (text.length <= maxLength) return text;
 
 		// Check if we're cutting in the middle of a surrogate pair

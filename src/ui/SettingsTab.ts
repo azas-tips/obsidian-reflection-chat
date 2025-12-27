@@ -323,11 +323,12 @@ export class SettingsTab extends PluginSettingTab {
 		this.isFetchingModels = true;
 
 		// Set timeout to reset flag if fetch hangs
+		// Use flag to prevent race condition between timeout and normal completion
+		let timeoutFired = false;
 		const timeoutId = setTimeout(() => {
-			if (this.isFetchingModels) {
-				logger.warn('Model fetch timed out, resetting state');
-				this.isFetchingModels = false;
-			}
+			timeoutFired = true;
+			logger.warn('Model fetch timed out, resetting state');
+			this.isFetchingModels = false;
 		}, SettingsTab.FETCH_TIMEOUT_MS);
 
 		try {
@@ -361,7 +362,10 @@ export class SettingsTab extends PluginSettingTab {
 			logger.error('Failed to fetch models:', error instanceof Error ? error : undefined);
 		} finally {
 			clearTimeout(timeoutId);
-			this.isFetchingModels = false;
+			// Only reset flag if timeout hasn't already handled it
+			if (!timeoutFired) {
+				this.isFetchingModels = false;
+			}
 		}
 	}
 }

@@ -49,6 +49,7 @@ export class ChatView extends ItemView {
 	private messages: Message[] = [];
 	private isLoading = false;
 	private isClosed = false; // Prevents operations after view is closed
+	private uiHealthy = true; // Tracks if UI is in a valid state after recovery failures
 	private streamingContent = '';
 	private currentStreamingAbortController: AbortController | null = null; // For canceling ongoing streams
 	private streamingTruncated = false; // Track if streaming was truncated
@@ -284,6 +285,12 @@ export class ChatView extends ItemView {
 	 * Refresh UI when language changes while preserving chat state
 	 */
 	refreshUI(): void {
+		// Skip refresh if UI is in a failed state
+		if (!this.uiHealthy) {
+			logger.warn('Skipping UI refresh - UI is in failed state');
+			return;
+		}
+
 		// Save current input value
 		const currentInput = this.inputEl?.value || '';
 
@@ -309,8 +316,9 @@ export class ChatView extends ItemView {
 			try {
 				this.onOpen();
 			} catch {
-				// Critical failure - log and leave UI in partial state
+				// Critical failure - mark UI as unhealthy to prevent further operations
 				logger.error('Critical: Failed to recover UI after refresh error');
+				this.uiHealthy = false;
 			}
 		}
 	}
@@ -540,7 +548,7 @@ export class ChatView extends ItemView {
 	}
 
 	private async sendMessage(): Promise<void> {
-		if (!this.inputEl || this.isLoading) return;
+		if (!this.inputEl || this.isLoading || !this.uiHealthy) return;
 
 		const content = this.inputEl.value.trim();
 		if (!content) return;
@@ -727,11 +735,17 @@ export class ChatView extends ItemView {
 		}
 
 		for (const entity of context.linkedEntities.slice(0, 3)) {
+			// Skip entities without valid path
+			if (!entity.path) {
+				logger.warn(`Entity "${entity.name}" has no path, skipping`);
+				continue;
+			}
 			const item = items.createDiv({ cls: 'reflection-chat-related-item' });
 			setIcon(item.createSpan(), 'user');
 			item.createSpan({ text: entity.name });
+			const entityPath = entity.path; // Capture for closure
 			const handler = () => {
-				this.app.workspace.openLinkText(entity.path, '', true);
+				this.app.workspace.openLinkText(entityPath, '', true);
 			};
 			item.addEventListener('click', handler);
 			this.dynamicClickHandlers.push({ element: item, handler });

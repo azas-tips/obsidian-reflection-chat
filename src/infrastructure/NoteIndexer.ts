@@ -259,6 +259,12 @@ export class NoteIndexer {
 			return { indexed: 0, errors: 0 };
 		}
 
+		// Validate folder configuration
+		if (!this.journalFolder || !this.entitiesFolder) {
+			logger.error('Cannot index: folder configuration is invalid');
+			return { indexed: 0, errors: 0 };
+		}
+
 		this.isIndexing = true;
 		let indexed = 0;
 		let errors = 0;

@@ -159,7 +159,7 @@ export class OpenRouterClient {
 			throw new ApiError(t.errors.noResponseBody, 500);
 		}
 
-		const reader = response.body.getReader();
+		let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
 		const decoder = new TextDecoder();
 		let fullContent = '';
 		let buffer = '';
@@ -178,7 +178,7 @@ export class OpenRouterClient {
 					}
 				}, this.streamReadTimeout);
 
-				reader
+				reader!
 					.read()
 					.then((result) => {
 						clearTimeout(timeoutId);
@@ -198,6 +198,8 @@ export class OpenRouterClient {
 		};
 
 		try {
+			reader = response.body.getReader();
+
 			while (true) {
 				const { done, value } = await readWithTimeout();
 				if (done) break;
@@ -241,7 +243,9 @@ export class OpenRouterClient {
 				}
 			}
 		} finally {
-			reader.releaseLock();
+			if (reader) {
+				reader.releaseLock();
+			}
 		}
 
 		return fullContent;
