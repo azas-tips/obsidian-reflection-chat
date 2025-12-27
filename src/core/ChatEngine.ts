@@ -323,9 +323,21 @@ export class ChatEngine {
 			}
 		}
 
+		// Get summary with validation
+		const summary = getString('summary', '');
+		if (!summary) {
+			logger.warn('LLM response missing required "summary" field');
+		}
+
+		// Get tags with validation
+		const tags = getStringArray('tags', ChatEngine.MAX_TAGS);
+		if (tags.length === 0) {
+			logger.warn('LLM response has empty "tags" array');
+		}
+
 		return {
-			summary: getString('summary', ''),
-			tags: getStringArray('tags', ChatEngine.MAX_TAGS),
+			summary,
+			tags,
 			category: validCategory,
 			decisions: getStringArray('decisions', ChatEngine.MAX_STRING_ITEMS),
 			insights: getStringArray('insights', ChatEngine.MAX_STRING_ITEMS),

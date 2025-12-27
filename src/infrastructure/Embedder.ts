@@ -77,6 +77,11 @@ export class Embedder {
 			throw new Error('OpenRouter API key not set');
 		}
 
+		// Ensure embedder is initialized (may have been reset by setApiKey)
+		if (!this.initialized) {
+			await this.initialize();
+		}
+
 		const controller = new AbortController();
 		const timeoutId = setTimeout(() => controller.abort(), Embedder.EMBEDDING_TIMEOUT_MS);
 

@@ -119,13 +119,20 @@ export class SessionManager {
 			let file: TFile;
 			if (existingFile instanceof TFile) {
 				// Append to existing file
-				const existingContent = await this.app.vault.read(existingFile);
-				const newContent =
-					existingContent +
-					'\n\n---\n\n' +
-					this.formatSessionSection(session, summary, timeStr);
-				await this.app.vault.modify(existingFile, newContent);
-				file = existingFile;
+				// Use try-catch to handle race condition where file is deleted between check and read
+				try {
+					const existingContent = await this.app.vault.read(existingFile);
+					const newContent =
+						existingContent +
+						'\n\n---\n\n' +
+						this.formatSessionSection(session, summary, timeStr);
+					await this.app.vault.modify(existingFile, newContent);
+					file = existingFile;
+				} catch {
+					// File was deleted between check and read, create new file
+					logger.warn('File was deleted during save, creating new file');
+					file = await this.app.vault.create(filePath, content);
+				}
 			} else {
 				// Create new file
 				file = await this.app.vault.create(filePath, content);

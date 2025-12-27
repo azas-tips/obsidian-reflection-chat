@@ -89,6 +89,12 @@ export function validateFolderPath(path: string): string | null {
 		return null;
 	}
 
+	// Check for control characters (ASCII 0-31 and 127)
+	// eslint-disable-next-line no-control-regex
+	if (/[\x00-\x1f\x7f]/.test(normalized)) {
+		return null;
+	}
+
 	// Check for dangerous characters
 	if (/[<>:"|?*\\]/.test(normalized)) {
 		return null;

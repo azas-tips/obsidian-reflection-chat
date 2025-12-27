@@ -343,6 +343,9 @@ export class NoteIndexer {
 		frontmatter: Record<string, unknown>,
 		body: string
 	): VectorMetadata {
+		// Defensive null check for frontmatter
+		const safeFrontmatter = frontmatter ?? {};
+
 		// Get title from file name or first heading
 		let title = file.basename;
 		const headingMatch = body.match(/^#\s+(.+)$/m);
@@ -363,7 +366,7 @@ export class NoteIndexer {
 		const inlineTags = tagMatches.map((t) => t.slice(1));
 
 		// Combine frontmatter tags and inline tags using type-safe accessor
-		const frontmatterTags = getFrontmatterStringArray(frontmatter, 'tags');
+		const frontmatterTags = getFrontmatterStringArray(safeFrontmatter, 'tags');
 		const allTags = [...new Set([...frontmatterTags, ...inlineTags])];
 
 		// Determine type
@@ -372,10 +375,10 @@ export class NoteIndexer {
 		return {
 			path: file.path,
 			title,
-			date: getFrontmatterString(frontmatter, 'date', this.getFileDate(file)),
+			date: getFrontmatterString(safeFrontmatter, 'date', this.getFileDate(file)),
 			summary: summaryText,
 			tags: allTags,
-			category: getFrontmatterString(frontmatter, 'category', 'life'),
+			category: getFrontmatterString(safeFrontmatter, 'category', 'life'),
 			type: type as 'session' | 'entity',
 		};
 	}
