@@ -73,13 +73,21 @@ export class Embedder {
 			throw new Error('Embedding input is too short or empty');
 		}
 
-		if (!this.apiKey) {
+		// Capture API key at start to ensure consistent use throughout the method
+		// This prevents issues if setApiKey() is called during an embed operation
+		const apiKey = this.apiKey;
+		if (!apiKey) {
 			throw new Error('OpenRouter API key not set');
 		}
 
 		// Ensure embedder is initialized (may have been reset by setApiKey)
 		if (!this.initialized) {
 			await this.initialize();
+		}
+
+		// Re-check API key after async initialize() in case it changed
+		if (this.apiKey !== apiKey) {
+			throw new Error('API key changed during embed operation, please retry');
 		}
 
 		const controller = new AbortController();

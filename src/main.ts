@@ -63,7 +63,8 @@ export default class ReflectionChatPlugin extends Plugin {
 		this.addSettingTab(new SettingsTab(this.app, this));
 
 		// Initialize embedding and indexing in background
-		this.initializeEmbedding();
+		// Use void to explicitly ignore the promise (errors are handled inside)
+		void this.initializeEmbedding();
 	}
 
 	async onunload() {

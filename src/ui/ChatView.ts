@@ -744,9 +744,9 @@ export class ChatView extends ItemView {
 		}
 
 		for (const entity of context.linkedEntities.slice(0, 3)) {
-			// Skip entities without valid path
-			if (!entity.path) {
-				logger.warn(`Entity "${entity.name}" has no path, skipping`);
+			// Skip entities with missing or invalid data
+			if (!entity.path || !entity.name) {
+				logger.error('Corrupted entity data: missing path or name');
 				continue;
 			}
 			const item = items.createDiv({ cls: 'reflection-chat-related-item' });
