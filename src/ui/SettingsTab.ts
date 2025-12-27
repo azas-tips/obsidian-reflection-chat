@@ -10,9 +10,23 @@ export class SettingsTab extends PluginSettingTab {
 	private embeddingModelOptions: { value: string; label: string }[] = [];
 	private isFetchingModels = false; // Prevent concurrent fetches
 
+	private static readonly VALID_LANGUAGES: readonly Language[] = ['ja', 'en'] as const;
+
 	constructor(app: App, plugin: ReflectionChatPlugin) {
 		super(app, plugin);
 		this.plugin = plugin;
+	}
+
+	/**
+	 * Safely save settings with error handling
+	 */
+	private async safeSettingsSave(): Promise<void> {
+		try {
+			await this.plugin.saveSettings();
+		} catch (error) {
+			logger.error('Failed to save settings:', error instanceof Error ? error : undefined);
+			new Notice(getTranslations().notices.saveFailed);
+		}
 	}
 
 	async display(): Promise<void> {
@@ -46,9 +60,14 @@ export class SettingsTab extends PluginSettingTab {
 				})
 			);
 
-		// Fetch models if API key is set
+		// Fetch models if API key is set (errors handled internally)
 		if (this.plugin.settings.openRouterApiKey) {
-			await this.fetchModels();
+			try {
+				await this.fetchModels();
+			} catch {
+				// fetchModels already logs errors, but catch here to prevent display() from failing
+				logger.warn('Model fetch failed during display, continuing with defaults');
+			}
 		}
 
 		new Setting(containerEl)
@@ -264,11 +283,21 @@ export class SettingsTab extends PluginSettingTab {
 				dropdown.addOption('en', 'English');
 				dropdown.setValue(this.plugin.settings.language);
 				dropdown.onChange(async (value) => {
-					this.plugin.settings.language = value as Language;
-					setLanguage(value as Language);
-					await this.plugin.saveSettings();
+					// Validate language value before casting
+					const isValidLanguage = SettingsTab.VALID_LANGUAGES.includes(value as Language);
+					const language: Language = isValidLanguage ? (value as Language) : 'ja';
+					this.plugin.settings.language = language;
+					setLanguage(language);
+					await this.safeSettingsSave();
 					// Refresh the settings page
-					this.display();
+					try {
+						await this.display();
+					} catch (error) {
+						logger.error(
+							'Failed to refresh display:',
+							error instanceof Error ? error : undefined
+						);
+					}
 				});
 			});
 

@@ -15,6 +15,7 @@ export class OpenRouterClient {
 	private timeout = 60000; // 60 seconds
 	private streamReadTimeout = 30000; // 30 seconds between chunks
 	private static readonly MAX_RESPONSE_LENGTH = 500000; // 500KB max response
+	private static readonly MIN_API_KEY_LENGTH = 20; // Minimum valid API key length
 
 	constructor(apiKey: string) {
 		this.apiKey = apiKey;
@@ -25,7 +26,7 @@ export class OpenRouterClient {
 	}
 
 	isConfigured(): boolean {
-		return this.apiKey.length > 0;
+		return this.apiKey.length >= OpenRouterClient.MIN_API_KEY_LENGTH;
 	}
 
 	private getHeaders(): Record<string, string> {

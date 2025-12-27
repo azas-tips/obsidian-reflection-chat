@@ -344,7 +344,15 @@ export class ChatView extends ItemView {
 				);
 			}
 
-			this.messages = chatState.messages;
+			// Enforce message history limit to prevent memory issues
+			if (chatState.messages.length > ChatView.MAX_MESSAGE_HISTORY) {
+				logger.warn(
+					`setState: Truncating message history from ${chatState.messages.length} to ${ChatView.MAX_MESSAGE_HISTORY}`
+				);
+				this.messages = chatState.messages.slice(-ChatView.MAX_MESSAGE_HISTORY);
+			} else {
+				this.messages = chatState.messages;
+			}
 			// Only render if container is ready (onOpen has completed)
 			if (this.messagesContainer) {
 				this.renderMessages();

@@ -384,9 +384,20 @@ export class NoteIndexer {
 	}
 
 	private createEmbeddingText(metadata: VectorMetadata): string {
-		const parts = [metadata.title, metadata.summary, metadata.tags.join(' ')];
+		const parts = [
+			metadata.title || 'Untitled',
+			metadata.summary || '',
+			metadata.tags.join(' '),
+		];
 
-		return parts.join('\n');
+		const text = parts.join('\n').trim();
+
+		// Ensure we have meaningful content for embedding
+		if (!text || text === 'Untitled') {
+			logger.warn(`Note has minimal content for embedding: ${metadata.path}`);
+		}
+
+		return text || 'Untitled note';
 	}
 
 	private getFileDate(file: TFile): string {
