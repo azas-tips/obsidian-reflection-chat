@@ -16,11 +16,11 @@ AIコーチングと対話しながら、あなたのパーソナルコンテキ
 
 1. [BRAT](https://github.com/TfTHacker/obsidian42-brat) プラグインをインストール
 2. BRATの設定で「Add Beta plugin」をクリック
-3. このリポジトリのURLを入力: `https://github.com/haruki/obsidian-reflection-chat`
+3. このリポジトリのURLを入力: `azas-tips/obsidian-reflection-chat`
 
 ### 手動インストール
 
-1. [Releases](https://github.com/haruki/obsidian-reflection-chat/releases)から最新版をダウンロード
+1. [Releases](https://github.com/azas-tips/obsidian-reflection-chat/releases)から最新版をダウンロード
 2. `main.js`、`manifest.json`、`styles.css`を`<vault>/.obsidian/plugins/reflection-chat/`にコピー
 3. Obsidianを再起動し、設定でプラグインを有効化
 
