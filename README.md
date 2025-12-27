@@ -6,7 +6,7 @@ AIコーチングと対話しながら、あなたのパーソナルコンテキ
 
 - **AIコーチング対話**: OpenRouter経由で様々なLLM（Claude, GPT-4o等）と対話
 - **文脈を理解**: 過去の振り返りやエンティティ（人物・プロジェクト・書籍等）を自動的に参照
-- **ローカル埋め込み**: ruri-v3モデルによるプライベートなセマンティック検索
+- **セマンティック検索**: OpenRouter Embedding APIによる意味ベースの関連ノート検索
 - **自動要約・構造化**: セッション終了時に要約、タグ、エンティティを自動抽出
 - **ナレッジグラフ構築**: 人物・プロジェクト・書籍などの関係性を自動的にリンク
 
@@ -65,6 +65,7 @@ entities/
 | OpenRouter API Key | APIキー | - |
 | 対話モデル | チャットに使用するモデル | Claude Sonnet 4.5 |
 | 要約モデル | 要約生成に使用するモデル | Claude Haiku 4.5 |
+| 埋め込みモデル | セマンティック検索に使用 | Qwen3 Embedding 8B |
 | セッション保存先 | セッションノートの保存フォルダ | journal |
 | エンティティ保存先 | エンティティノートの保存フォルダ | entities |
 | 直近参照日数 | 文脈として参照する日数 | 7 |
@@ -76,12 +77,24 @@ entities/
 ### 依存関係
 
 - **LLM**: OpenRouter API
-- **埋め込み**: OpenRouter Embedding API (qwen3-embedding)
-- **ベクトルDB**: ローカルJSON (Obsidian vault API)
+- **埋め込み**: OpenRouter Embedding API (Qwen3, OpenAI等選択可)
+
+### データ保存
+
+ベクトルデータはVault内のプラグインフォルダに保存されます：
+
+```
+.obsidian/plugins/reflection-chat/vectors/
+├── journal_2024-01-01.json
+├── journal_2024-01-02.json
+└── ...
+```
+
+各ノートごとに個別ファイルで保存されるため、長期運用でも効率的です。
 
 ### プライバシー
 
-- ベクトルデータはローカルに保存
+- ベクトルデータはローカル（Vault内）に保存
 - OpenRouter APIへの送信：対話内容、埋め込み用テキスト、関連コンテキスト
 
 ## 開発
@@ -112,5 +125,3 @@ MIT License
 
 - [Obsidian](https://obsidian.md/) - 素晴らしいナレッジベースアプリ
 - [OpenRouter](https://openrouter.ai/) - 統一されたLLM API
-- [Transformers.js](https://huggingface.co/docs/transformers.js) - ブラウザでのML推論
-- [Vectra](https://github.com/Stevenic/vectra) - ローカルベクトルDB
