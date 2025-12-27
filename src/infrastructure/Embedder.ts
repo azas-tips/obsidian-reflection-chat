@@ -1,4 +1,12 @@
-import { pipeline, env } from '@xenova/transformers';
+// Dynamic import to avoid path resolution issues at bundle load time
+let transformersModule: any = null;
+
+async function getTransformers() {
+	if (!transformersModule) {
+		transformersModule = await import('@xenova/transformers');
+	}
+	return transformersModule;
+}
 
 export interface EmbedderOptions {
 	pluginPath?: string;
@@ -18,10 +26,6 @@ export class Embedder {
 		if (this.extractor) return;
 		if (this.loadPromise) return this.loadPromise;
 
-		// Configure transformers.js v2
-		env.allowLocalModels = false;
-		env.allowRemoteModels = true;
-
 		this.loadPromise = this.loadModel();
 		await this.loadPromise;
 	}
@@ -31,6 +35,12 @@ export class Embedder {
 		this.isLoading = true;
 
 		try {
+			const { pipeline, env } = await getTransformers();
+
+			// Configure transformers.js v2
+			env.allowLocalModels = false;
+			env.allowRemoteModels = true;
+
 			console.log(`Loading embedding model: ${this.modelId}`);
 
 			this.extractor = await pipeline('feature-extraction', this.modelId, {
