@@ -698,13 +698,13 @@ export class ChatView extends ItemView {
 			context.semanticMatches.length > 0 ||
 			context.linkedEntities.length > 0;
 
+		// Always clean up old related item handlers before re-rendering or hiding
+		this.cleanupRelatedItemHandlers();
+
 		if (!hasRelated) {
 			this.relatedPanel.style.display = 'none';
 			return;
 		}
-
-		// Clean up old related item handlers before re-rendering
-		this.cleanupRelatedItemHandlers();
 
 		this.relatedPanel.empty();
 		this.relatedPanel.style.display = 'block';

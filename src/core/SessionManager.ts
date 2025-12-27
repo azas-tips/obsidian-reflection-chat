@@ -85,9 +85,12 @@ export class SessionManager {
 		let saveError: Error | null = null;
 
 		try {
-			// Wait for any previous save to complete (ignore previous errors)
-			await previousLock.catch(() => {
-				// Previous save failed, but we can still proceed
+			// Wait for any previous save to complete (log but don't block on previous errors)
+			await previousLock.catch((prevError) => {
+				logger.warn(
+					'Previous save operation failed:',
+					prevError instanceof Error ? prevError : undefined
+				);
 			});
 
 			if (!this.currentSession || this.currentSession.messages.length === 0) {

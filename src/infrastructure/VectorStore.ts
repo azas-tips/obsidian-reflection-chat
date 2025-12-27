@@ -35,6 +35,7 @@ export class VectorStore {
 	private dirtyItems: Set<string> = new Set(); // Track which items need saving
 	private deletedItems: Set<string> = new Set(); // Track deleted items
 	private initialized = false;
+	private isInitializing = false; // Prevent concurrent initialization
 	private initializationError: Error | null = null; // Track initialization failures
 	private saveTimeout: ReturnType<typeof setTimeout> | null = null;
 	private saveLock: Promise<void> = Promise.resolve(); // Mutex for save operations
@@ -57,6 +58,10 @@ export class VectorStore {
 	async initialize(): Promise<void> {
 		if (this.initialized) return;
 
+		// Prevent concurrent initialization attempts
+		if (this.isInitializing) return;
+		this.isInitializing = true;
+
 		// Create timeout promise
 		const timeoutPromise = new Promise<never>((_, reject) => {
 			setTimeout(() => {
@@ -75,6 +80,10 @@ export class VectorStore {
 			this.items = new Map();
 			this.initialized = true;
 			this.initializationError = err;
+			// Reset saveLock to prevent deadlock if it was modified during failed init
+			this.saveLock = Promise.resolve();
+		} finally {
+			this.isInitializing = false;
 		}
 	}
 

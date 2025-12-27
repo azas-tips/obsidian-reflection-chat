@@ -228,12 +228,8 @@ export class NoteIndexer {
 		const availableSlots = NoteIndexer.MAX_PENDING_UPDATES - this.pendingUpdates.size;
 		if (availableSlots <= 0) return;
 
-		// Take up to availableSlots files from dropped map
-		const filesToRetry: string[] = [];
-		for (const path of this.droppedFiles.keys()) {
-			if (filesToRetry.length >= availableSlots) break;
-			filesToRetry.push(path);
-		}
+		// Take up to availableSlots files from dropped map (snapshot to avoid iteration issues)
+		const filesToRetry = Array.from(this.droppedFiles.keys()).slice(0, availableSlots);
 
 		// Schedule retry for each file
 		for (const path of filesToRetry) {

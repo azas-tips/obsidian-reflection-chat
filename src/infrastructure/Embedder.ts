@@ -110,13 +110,13 @@ export class Embedder {
 				let errorMessage = `HTTP ${response.status}`;
 				try {
 					const errorBody = await response.json();
-					// Only extract safe error fields
+					// Only extract safe error fields - redact BEFORE truncating to avoid partial key leak
 					if (errorBody.error?.message) {
-						const rawMsg = String(errorBody.error.message).slice(0, 200);
-						errorMessage = this.redactSecrets(rawMsg);
+						const redacted = this.redactSecrets(String(errorBody.error.message));
+						errorMessage = redacted.slice(0, 200);
 					} else if (errorBody.message) {
-						const rawMsg = String(errorBody.message).slice(0, 200);
-						errorMessage = this.redactSecrets(rawMsg);
+						const redacted = this.redactSecrets(String(errorBody.message));
+						errorMessage = redacted.slice(0, 200);
 					}
 				} catch {
 					// If JSON parsing fails, use status text only
