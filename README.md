@@ -76,14 +76,13 @@ entities/
 ### 依存関係
 
 - **LLM**: OpenRouter API
-- **埋め込み**: ruri-v3-30m-onnx (Transformers.js)
+- **埋め込み**: OpenRouter Embedding API (qwen3-embedding)
 - **ベクトルDB**: ローカルJSON (Obsidian vault API)
 
 ### プライバシー
 
-- 埋め込み生成はローカルで実行
 - ベクトルデータはローカルに保存
-- LLM APIへの送信は対話内容と関連コンテキストのみ
+- OpenRouter APIへの送信：対話内容、埋め込み用テキスト、関連コンテキスト
 
 ## 開発
 

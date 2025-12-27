@@ -96,8 +96,8 @@ export default class ReflectionChatPlugin extends Plugin {
 			this.settings.entitiesFolder
 		);
 
-		// Initialize Embedder with plugin path for caching
-		this.embedder = new Embedder(pluginPath);
+		// Initialize Embedder with OpenRouter API key
+		this.embedder = new Embedder(this.settings.openRouterApiKey);
 
 		// Initialize Vector Store
 		this.vectorStore = new VectorStore(this.app, pluginPath);
@@ -169,6 +169,9 @@ export default class ReflectionChatPlugin extends Plugin {
 		// Update components with new settings
 		if (this.openRouterClient) {
 			this.openRouterClient.setApiKey(this.settings.openRouterApiKey);
+		}
+		if (this.embedder) {
+			this.embedder.setApiKey(this.settings.openRouterApiKey);
 		}
 		if (this.chatEngine) {
 			this.chatEngine.updateSettings(

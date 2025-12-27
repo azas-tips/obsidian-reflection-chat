@@ -1,94 +1,76 @@
-// Dynamic import to avoid path resolution issues at bundle load time
-let transformersModule: any = null;
-
-async function getTransformers() {
-	if (!transformersModule) {
-		transformersModule = await import('@xenova/transformers');
-	}
-	return transformersModule;
-}
-
-export interface EmbedderOptions {
-	pluginPath?: string;
-}
-
+/**
+ * Embedder using OpenRouter's embedding API
+ * Avoids Transformers.js compatibility issues with Obsidian's CommonJS environment
+ */
 export class Embedder {
-	private extractor: any = null;
-	private modelId = 'sirasagi62/ruri-v3-30m-onnx';
-	private isLoading = false;
-	private loadPromise: Promise<void> | null = null;
+	private apiKey: string;
+	private model = 'qwen/qwen3-embedding-0.6b'; // Multilingual, lightweight
+	private initialized = false;
 
-	constructor(_pluginPath?: string, _options?: EmbedderOptions) {
-		// v2 uses browser cache automatically
+	constructor(apiKey: string) {
+		this.apiKey = apiKey;
+	}
+
+	setApiKey(apiKey: string): void {
+		this.apiKey = apiKey;
 	}
 
 	async initialize(): Promise<void> {
-		if (this.extractor) return;
-		if (this.loadPromise) return this.loadPromise;
-
-		this.loadPromise = this.loadModel();
-		await this.loadPromise;
-	}
-
-	private async loadModel(): Promise<void> {
-		if (this.isLoading) return;
-		this.isLoading = true;
-
-		try {
-			const { pipeline, env } = await getTransformers();
-
-			// Configure transformers.js v2
-			env.allowLocalModels = false;
-			env.allowRemoteModels = true;
-
-			console.log(`Loading embedding model: ${this.modelId}`);
-
-			this.extractor = await pipeline('feature-extraction', this.modelId, {
-				quantized: false, // ruri-v3 uses fp32
-			});
-
-			console.log('Embedding model loaded successfully');
-		} catch (error) {
-			console.error('Failed to load embedding model:', error);
-			throw error;
-		} finally {
-			this.isLoading = false;
+		if (!this.apiKey) {
+			throw new Error('OpenRouter API key not set');
 		}
+		this.initialized = true;
+		console.log(`Embedder initialized with model: ${this.model}`);
 	}
 
 	async embedQuery(text: string): Promise<number[]> {
-		await this.initialize();
-
-		// ruri-v3 uses クエリ prefix for queries
+		// Add query prefix for better retrieval
 		const prefixedText = `クエリ: ${text}`;
 		return this.embed(prefixedText);
 	}
 
 	async embedDocument(text: string): Promise<number[]> {
-		await this.initialize();
-
-		// ruri-v3 uses 文章 prefix for documents
+		// Add document prefix
 		const prefixedText = `文章: ${text}`;
 		return this.embed(prefixedText);
 	}
 
 	private async embed(text: string): Promise<number[]> {
-		if (!this.extractor) {
-			throw new Error('Embedder not initialized');
+		if (!this.apiKey) {
+			throw new Error('OpenRouter API key not set');
 		}
 
 		try {
-			// Truncate text if too long (max 8192 tokens, roughly 4x characters for Japanese)
+			// Truncate text if too long
 			const maxChars = 8000;
 			const truncatedText = text.length > maxChars ? text.slice(0, maxChars) : text;
 
-			const output = await this.extractor(truncatedText, {
-				pooling: 'mean',
-				normalize: true,
+			const response = await fetch('https://openrouter.ai/api/v1/embeddings', {
+				method: 'POST',
+				headers: {
+					Authorization: `Bearer ${this.apiKey}`,
+					'Content-Type': 'application/json',
+					'HTTP-Referer': 'https://github.com/azas-tips/obsidian-reflection-chat',
+					'X-Title': 'Reflection Chat',
+				},
+				body: JSON.stringify({
+					model: this.model,
+					input: truncatedText,
+				}),
 			});
 
-			// Convert to regular array
-			return Array.from(output.data);
+			if (!response.ok) {
+				const error = await response.text();
+				throw new Error(`Embedding API error: ${response.status} ${error}`);
+			}
+
+			const data = await response.json();
+
+			if (!data.data || !data.data[0] || !data.data[0].embedding) {
+				throw new Error('Invalid embedding response');
+			}
+
+			return data.data[0].embedding;
 		} catch (error) {
 			console.error('Embedding error:', error);
 			throw error;
@@ -105,6 +87,6 @@ export class Embedder {
 	}
 
 	isReady(): boolean {
-		return this.extractor !== null;
+		return this.initialized && !!this.apiKey;
 	}
 }
