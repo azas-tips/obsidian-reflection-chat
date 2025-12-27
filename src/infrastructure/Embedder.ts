@@ -1,8 +1,7 @@
-import { pipeline, env } from '@huggingface/transformers';
+import { pipeline, env } from '@xenova/transformers';
 
 export interface EmbedderOptions {
 	pluginPath?: string;
-	useWebGPU?: boolean;
 }
 
 export class Embedder {
@@ -10,43 +9,21 @@ export class Embedder {
 	private modelId = 'sirasagi62/ruri-v3-30m-onnx';
 	private isLoading = false;
 	private loadPromise: Promise<void> | null = null;
-	private cachePath: string;
-	private useWebGPU: boolean;
-	private device: 'webgpu' | 'cpu' = 'cpu';
 
-	constructor(pluginPath?: string, options?: EmbedderOptions) {
-		// Set cache directory based on plugin path or use default
-		this.cachePath = pluginPath ? `${pluginPath}/.cache/transformers` : './.cache/transformers';
-		this.useWebGPU = options?.useWebGPU ?? true; // Enable by default, will fallback if unavailable
+	constructor(_pluginPath?: string, _options?: EmbedderOptions) {
+		// v2 uses browser cache automatically
 	}
 
 	async initialize(): Promise<void> {
 		if (this.extractor) return;
 		if (this.loadPromise) return this.loadPromise;
 
-		// Configure transformers.js for local caching
-		env.cacheDir = this.cachePath;
-		env.allowLocalModels = true;
+		// Configure transformers.js v2
+		env.allowLocalModels = false;
+		env.allowRemoteModels = true;
 
 		this.loadPromise = this.loadModel();
 		await this.loadPromise;
-	}
-
-	private async checkWebGPUSupport(): Promise<boolean> {
-		if (!this.useWebGPU) return false;
-
-		try {
-			if (typeof navigator !== 'undefined' && 'gpu' in navigator) {
-				const gpu = (navigator as any).gpu;
-				if (gpu) {
-					const adapter = await gpu.requestAdapter();
-					return adapter !== null;
-				}
-			}
-		} catch {
-			// WebGPU not available
-		}
-		return false;
 	}
 
 	private async loadModel(): Promise<void> {
@@ -54,33 +31,14 @@ export class Embedder {
 		this.isLoading = true;
 
 		try {
-			// Check WebGPU availability
-			const webgpuAvailable = await this.checkWebGPUSupport();
-			this.device = webgpuAvailable ? 'webgpu' : 'cpu';
+			console.log(`Loading embedding model: ${this.modelId}`);
 
-			console.log(`Loading embedding model: ${this.modelId} (device: ${this.device})`);
+			this.extractor = await pipeline('feature-extraction', this.modelId, {
+				quantized: false, // ruri-v3 uses fp32
+			});
 
-			const pipelineOptions: any = {};
-			if (webgpuAvailable) {
-				pipelineOptions.device = 'webgpu';
-			}
-
-			this.extractor = await pipeline('feature-extraction', this.modelId, pipelineOptions);
 			console.log('Embedding model loaded successfully');
 		} catch (error) {
-			// If WebGPU fails, try falling back to CPU
-			if (this.device === 'webgpu') {
-				console.warn('WebGPU failed, falling back to CPU');
-				this.device = 'cpu';
-				try {
-					this.extractor = await pipeline('feature-extraction', this.modelId);
-					console.log('Embedding model loaded successfully (CPU fallback)');
-					return;
-				} catch (fallbackError) {
-					console.error('Failed to load embedding model (fallback):', fallbackError);
-					throw fallbackError;
-				}
-			}
 			console.error('Failed to load embedding model:', error);
 			throw error;
 		} finally {
@@ -88,14 +46,10 @@ export class Embedder {
 		}
 	}
 
-	getDevice(): string {
-		return this.device;
-	}
-
 	async embedQuery(text: string): Promise<number[]> {
 		await this.initialize();
 
-		// Add query prefix for better retrieval
+		// ruri-v3 uses クエリ prefix for queries
 		const prefixedText = `クエリ: ${text}`;
 		return this.embed(prefixedText);
 	}
@@ -103,7 +57,7 @@ export class Embedder {
 	async embedDocument(text: string): Promise<number[]> {
 		await this.initialize();
 
-		// Add document prefix
+		// ruri-v3 uses 文章 prefix for documents
 		const prefixedText = `文章: ${text}`;
 		return this.embed(prefixedText);
 	}
@@ -134,9 +88,7 @@ export class Embedder {
 	async batchEmbed(texts: string[], isQuery = false): Promise<number[][]> {
 		const results: number[][] = [];
 		for (const text of texts) {
-			const embedding = isQuery
-				? await this.embedQuery(text)
-				: await this.embedDocument(text);
+			const embedding = isQuery ? await this.embedQuery(text) : await this.embedDocument(text);
 			results.push(embedding);
 		}
 		return results;

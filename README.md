@@ -77,7 +77,7 @@ entities/
 
 - **LLM**: OpenRouter API
 - **埋め込み**: ruri-v3-30m-onnx (Transformers.js)
-- **ベクトルDB**: Vectra (ローカルファイルベース)
+- **ベクトルDB**: ローカルJSON (Obsidian vault API)
 
 ### プライバシー
 
