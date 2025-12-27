@@ -106,7 +106,7 @@ export class Embedder {
 			const response = await fetch('https://openrouter.ai/api/v1/embeddings', {
 				method: 'POST',
 				headers: {
-					Authorization: `Bearer ${this.apiKey}`,
+					Authorization: `Bearer ${apiKey}`,
 					'Content-Type': 'application/json',
 					'HTTP-Referer': 'https://github.com/anthropics/obsidian-reflection-chat',
 					'X-Title': 'Reflection Chat',
