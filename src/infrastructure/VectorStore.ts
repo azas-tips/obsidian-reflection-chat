@@ -62,9 +62,10 @@ export class VectorStore {
 		if (this.isInitializing) return;
 		this.isInitializing = true;
 
-		// Create timeout promise
+		// Create timeout promise with cleanup capability
+		let timeoutId: ReturnType<typeof setTimeout> | null = null;
 		const timeoutPromise = new Promise<never>((_, reject) => {
-			setTimeout(() => {
+			timeoutId = setTimeout(() => {
 				reject(new Error('Vector store initialization timed out'));
 			}, VectorStore.INITIALIZATION_TIMEOUT_MS);
 		});
@@ -83,6 +84,10 @@ export class VectorStore {
 			// Reset saveLock to prevent deadlock if it was modified during failed init
 			this.saveLock = Promise.resolve();
 		} finally {
+			// Always clear the timeout to prevent memory leaks and unhandled rejections
+			if (timeoutId !== null) {
+				clearTimeout(timeoutId);
+			}
 			this.isInitializing = false;
 		}
 	}
