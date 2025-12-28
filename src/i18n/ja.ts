@@ -155,6 +155,28 @@ export const ja: Translations = {
 		relatedEntities: '関連する人物・プロジェクト',
 	},
 
+	report: {
+		weekly: '週次レポート',
+		monthly: '月次レポート',
+		sessionOverview: 'セッション概要',
+		sessionCount: '会話回数',
+		mainCategories: '主なカテゴリ',
+		moodOverview: '全体のムード',
+		topicHighlights: '話題のハイライト',
+		sessionDetails: 'セッション詳細',
+		category: 'カテゴリ',
+		openQuestions: '未解決の問い',
+		pendingActions: '次のアクション（未完了）',
+		insights: '気づき・学び',
+		generated: 'レポートを作成しました',
+		savedTo: 'に保存しました',
+		alreadyExists: 'のレポートは既に存在します。再生成しますか？',
+		regenerate: '再生成する',
+		cancel: 'キャンセル',
+		noSessions: '対象期間にセッションがありません',
+		invalidCommand: '無効なコマンドです。使用例: /report weekly, /report monthly last',
+	},
+
 	embedding: {
 		// Use English prefixes for better embedding model compatibility
 		queryPrefix: 'Query: ',

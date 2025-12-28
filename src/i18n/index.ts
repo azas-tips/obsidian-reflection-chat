@@ -165,6 +165,29 @@ export interface Translations {
 		relatedEntities: string;
 	};
 
+	// Report
+	report: {
+		weekly: string;
+		monthly: string;
+		sessionOverview: string;
+		sessionCount: string;
+		mainCategories: string;
+		moodOverview: string;
+		topicHighlights: string;
+		sessionDetails: string;
+		category: string;
+		openQuestions: string;
+		pendingActions: string;
+		insights: string;
+		generated: string;
+		savedTo: string;
+		alreadyExists: string;
+		regenerate: string;
+		cancel: string;
+		noSessions: string;
+		invalidCommand: string;
+	};
+
 	// Embedding
 	embedding: {
 		queryPrefix: string;

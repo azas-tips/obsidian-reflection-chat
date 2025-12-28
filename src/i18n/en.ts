@@ -154,6 +154,28 @@ export const en: Translations = {
 		relatedEntities: 'Related People & Projects',
 	},
 
+	report: {
+		weekly: 'Weekly Report',
+		monthly: 'Monthly Report',
+		sessionOverview: 'Session Overview',
+		sessionCount: 'Sessions',
+		mainCategories: 'Main Categories',
+		moodOverview: 'Overall Mood',
+		topicHighlights: 'Topic Highlights',
+		sessionDetails: 'Session Details',
+		category: 'Category',
+		openQuestions: 'Open Questions',
+		pendingActions: 'Pending Actions',
+		insights: 'Insights & Learnings',
+		generated: 'Report generated',
+		savedTo: 'Saved to',
+		alreadyExists: 'report already exists. Regenerate?',
+		regenerate: 'Regenerate',
+		cancel: 'Cancel',
+		noSessions: 'No sessions found for this period',
+		invalidCommand: 'Invalid command. Usage: /report weekly, /report monthly last',
+	},
+
 	embedding: {
 		queryPrefix: 'Query: ',
 		documentPrefix: 'Document: ',

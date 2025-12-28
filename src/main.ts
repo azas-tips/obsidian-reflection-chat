@@ -5,6 +5,7 @@ import { PluginSettings, DEFAULT_SETTINGS } from './types';
 import { OpenRouterClient } from './infrastructure/OpenRouterClient';
 import { ChatEngine } from './core/ChatEngine';
 import { SessionManager } from './core/SessionManager';
+import { ReportGenerator } from './core/ReportGenerator';
 import { Embedder } from './infrastructure/Embedder';
 import { VectorStore } from './infrastructure/VectorStore';
 import { NoteIndexer } from './infrastructure/NoteIndexer';
@@ -17,6 +18,7 @@ export default class ReflectionChatPlugin extends Plugin {
 	openRouterClient: OpenRouterClient | null = null;
 	chatEngine: ChatEngine | null = null;
 	sessionManager: SessionManager | null = null;
+	reportGenerator: ReportGenerator | null = null;
 	embedder: Embedder | null = null;
 	vectorStore: VectorStore | null = null;
 	noteIndexer: NoteIndexer | null = null;
@@ -103,6 +105,9 @@ export default class ReflectionChatPlugin extends Plugin {
 			this.settings.journalFolder,
 			this.settings.entitiesFolder
 		);
+
+		// Initialize Report Generator
+		this.reportGenerator = new ReportGenerator(this.app, this.settings.journalFolder);
 
 		// Initialize Embedder with OpenRouter API key and model
 		this.embedder = new Embedder(this.settings.openRouterApiKey, this.settings.embeddingModel);
@@ -285,6 +290,9 @@ export default class ReflectionChatPlugin extends Plugin {
 				this.settings.journalFolder,
 				this.settings.entitiesFolder
 			);
+		}
+		if (this.reportGenerator) {
+			this.reportGenerator.updateSettings(this.settings.journalFolder);
 		}
 		if (this.noteIndexer) {
 			this.noteIndexer.updateSettings(

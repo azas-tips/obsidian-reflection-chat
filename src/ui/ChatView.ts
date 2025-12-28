@@ -564,6 +564,12 @@ export class ChatView extends ItemView {
 
 		const t = getTranslations();
 
+		// Check for /report command
+		if (content.startsWith('/report')) {
+			await this.handleReportCommand(content);
+			return;
+		}
+
 		// Check if API is configured
 		if (!this.plugin.openRouterClient?.isConfigured()) {
 			new Notice(t.notices.apiKeyNotSet);
@@ -643,6 +649,190 @@ export class ChatView extends ItemView {
 			this.currentStreamingElement = null; // Clear cached element
 			this.isLoading = false;
 			this.updateSendButton();
+		}
+	}
+
+	private async handleReportCommand(content: string): Promise<void> {
+		if (!this.inputEl) return;
+
+		const t = getTranslations();
+		const reportGenerator = this.plugin.reportGenerator;
+
+		if (!reportGenerator) {
+			this.renderError(t.errors.notInitialized);
+			return;
+		}
+
+		// Clear input
+		this.inputEl.value = '';
+		this.inputEl.style.height = 'auto';
+
+		// Add user message
+		const userMessage: Message = {
+			id: generateId(),
+			role: 'user',
+			content,
+			timestamp: Date.now(),
+		};
+		this.addMessage(userMessage);
+		this.renderMessages();
+
+		// Parse command
+		const command = reportGenerator.parseCommand(content);
+		if (!command) {
+			this.renderAssistantMessage(t.report.invalidCommand);
+			return;
+		}
+
+		// Set loading state
+		this.isLoading = true;
+		this.updateSendButton();
+
+		try {
+			// Check if report already exists
+			const existingFile = await reportGenerator.checkReportExists(command);
+			if (existingFile) {
+				// Ask for confirmation
+				const typeLabel = command.type === 'weekly' ? t.report.weekly : t.report.monthly;
+				await this.showReportConfirmation(command, typeLabel, existingFile.path);
+				return;
+			}
+
+			// Generate report
+			await this.generateAndShowReport(command);
+		} catch (error) {
+			logger.error('Error generating report:', error instanceof Error ? error : undefined);
+			const errorMsg = getErrorMessage(error);
+			this.renderError(errorMsg);
+		} finally {
+			this.isLoading = false;
+			this.updateSendButton();
+		}
+	}
+
+	private async showReportConfirmation(
+		command: import('../core/ReportGenerator').ReportCommand,
+		typeLabel: string,
+		existingPath: string
+	): Promise<void> {
+		const t = getTranslations();
+
+		// Create confirmation message with buttons
+		const messageEl = this.createMessageElement('assistant');
+		const contentEl = messageEl.querySelector('.reflection-chat-message-content');
+		if (!contentEl) return;
+
+		contentEl.createEl('p', { text: `${typeLabel}${t.report.alreadyExists}` });
+		contentEl.createEl('p', { text: `📄 ${existingPath}`, cls: 'reflection-chat-report-path' });
+
+		const buttonContainer = contentEl.createEl('div', {
+			cls: 'reflection-chat-confirm-buttons',
+		});
+
+		const regenerateBtn = buttonContainer.createEl('button', {
+			text: t.report.regenerate,
+			cls: 'mod-cta',
+		});
+
+		const cancelBtn = buttonContainer.createEl('button', {
+			text: t.report.cancel,
+		});
+
+		// Store handlers for cleanup
+		const regenerateHandler = async () => {
+			// Remove buttons
+			buttonContainer.remove();
+			contentEl.createEl('p', { text: '...' });
+
+			try {
+				await this.generateAndShowReport(command);
+			} catch (error) {
+				logger.error(
+					'Error regenerating report:',
+					error instanceof Error ? error : undefined
+				);
+				const errorMsg = getErrorMessage(error);
+				this.renderError(errorMsg);
+			} finally {
+				this.isLoading = false;
+				this.updateSendButton();
+			}
+		};
+
+		const cancelHandler = () => {
+			buttonContainer.remove();
+			contentEl.createEl('p', { text: t.report.cancel });
+			this.isLoading = false;
+			this.updateSendButton();
+		};
+
+		regenerateBtn.addEventListener('click', regenerateHandler);
+		cancelBtn.addEventListener('click', cancelHandler);
+
+		// Track for cleanup
+		this.dynamicClickHandlers.push(
+			{ element: regenerateBtn, handler: regenerateHandler as () => void },
+			{ element: cancelBtn, handler: cancelHandler }
+		);
+
+		this.messagesContainer?.appendChild(messageEl);
+		this.scrollToBottom();
+	}
+
+	private async generateAndShowReport(
+		command: import('../core/ReportGenerator').ReportCommand
+	): Promise<void> {
+		const t = getTranslations();
+		const reportGenerator = this.plugin.reportGenerator;
+
+		if (!reportGenerator) {
+			this.renderError(t.errors.notInitialized);
+			return;
+		}
+
+		const { content, filePath } = await reportGenerator.generateReport(command);
+
+		// Check if no sessions found
+		const { startDate, endDate } = reportGenerator.getDateRange(command);
+		const sessions = await reportGenerator.fetchSessions(startDate, endDate);
+
+		if (sessions.length === 0) {
+			this.renderAssistantMessage(t.report.noSessions);
+			return;
+		}
+
+		// Show report in chat
+		const typeLabel = command.type === 'weekly' ? t.report.weekly : t.report.monthly;
+		const successMessage = `${t.report.generated}: ${typeLabel}\n${t.report.savedTo}: ${filePath}\n\n---\n\n${content}`;
+		this.renderAssistantMessage(successMessage);
+	}
+
+	private renderAssistantMessage(content: string): void {
+		const assistantMessage: Message = {
+			id: generateId(),
+			role: 'assistant',
+			content,
+			timestamp: Date.now(),
+		};
+		this.addMessage(assistantMessage);
+		this.renderMessages();
+	}
+
+	private createMessageElement(role: 'user' | 'assistant'): HTMLElement {
+		const messageEl = document.createElement('div');
+		messageEl.className = `reflection-chat-message ${role}`;
+
+		const icon = messageEl.createDiv({ cls: 'reflection-chat-message-icon' });
+		icon.textContent = role === 'user' ? '👤' : '🤖';
+
+		messageEl.createDiv({ cls: 'reflection-chat-message-content' });
+
+		return messageEl;
+	}
+
+	private scrollToBottom(): void {
+		if (this.messagesContainer) {
+			this.messagesContainer.scrollTop = this.messagesContainer.scrollHeight;
 		}
 	}
 
