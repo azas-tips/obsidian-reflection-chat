@@ -218,6 +218,22 @@ export const ja: Translations = {
   "category": "career / relationship / wellness / creative / financial / reading / idea / project / life",
   "decisions": ["検討中の意思決定があれば記載"],
   "insights": ["気づきや学びがあれば記載"],
+  "mood": {
+    "state": "positive / neutral / negative / mixed",
+    "description": "会話中の感情の動き（任意）"
+  },
+  "nextActions": [
+    {
+      "action": "具体的なアクション",
+      "priority": "high / medium / low",
+      "suggested": false
+    }
+  ],
+  "openQuestions": ["まだ答えが出ていない問い"],
+  "timeframe": {
+    "horizon": "immediate / short-term / long-term",
+    "deadline": "言及された期限（任意）"
+  },
   "entities": [
     {
       "name": "エンティティ名",
@@ -248,6 +264,34 @@ export const ja: Translations = {
 - 選択肢を比較する際の判断軸を抽出
 - トレードオフで悩んでいる場合は conflicted
 - 例: "時間の自由", "経済的安定", "成長機会", "家族との時間", "社会的評価"
+
+## ムード（mood）の判定ガイド
+- positive: 前向き、期待、やる気、安心
+- negative: 不安、落ち込み、イライラ、焦り
+- neutral: 淡々と、冷静、特に感情的でない
+- mixed: 感情が揺れている、複雑な心境
+- descriptionには感情の変化があれば記載（例: "最初は不安だったが話すうちに前向きに"）
+
+## 次のアクション（nextActions）の抽出ガイド
+- ユーザーが言及した具体的な行動予定を抽出
+- 会話からLLMが提案したアクションも含める（suggested: true）
+- priority: 緊急度・重要度から判断
+  - high: 今日〜今週中、重要な決断に関わる
+  - medium: 今月中、やった方がいい
+  - low: いつか、余裕があれば
+- 例: "上司に相談する", "本を読み直す", "見積もりを作成する"
+
+## 未解決の問い（openQuestions）の抽出ガイド
+- 会話で答えが出なかった問いを記録
+- 次回以降の会話で掘り下げるべきテーマ
+- 例: "本当にやりたいことは何か", "転職のタイミング", "優先順位の付け方"
+
+## 時間軸（timeframe）の判定ガイド
+- horizon: 話題の時間的スコープ
+  - immediate: 今日〜今週（直近の課題）
+  - short-term: 今月〜3ヶ月（近い将来）
+  - long-term: 半年以上（キャリア、人生設計）
+- deadline: 「来週までに」「3月末」など具体的期限があれば記載
 
 ## エンティティの抽出ガイド
 - 固有名詞（人物名、プロジェクト名、会社名、書籍名など）を抽出
@@ -285,10 +329,13 @@ export const ja: Translations = {
 
 ## 注意
 - tagsは日本語でOK
-- 該当なしの項目は空配列
+- 該当なしの項目は空配列またはnull
 - 推測で埋めない
 - valuesは会話で明確に表れたものだけ
 - entitiesは固有名詞のみ抽出（一般名詞は含めない）
-- relationsは明示的に言及された関係のみ`,
+- relationsは明示的に言及された関係のみ
+- moodは会話全体の印象から判断
+- nextActionsはユーザー発案（suggested: false）とLLM提案（suggested: true）を区別
+- openQuestionsは答えが出なかった問いのみ（解決済みは含めない）`,
 	},
 };

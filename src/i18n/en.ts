@@ -216,6 +216,22 @@ Reflect expertise naturally through the angle of questions and direction of expl
   "category": "career / relationship / wellness / creative / financial / reading / idea / project / life",
   "decisions": ["pending decisions if any"],
   "insights": ["insights or learnings if any"],
+  "mood": {
+    "state": "positive / neutral / negative / mixed",
+    "description": "Emotional flow during conversation (optional)"
+  },
+  "nextActions": [
+    {
+      "action": "Specific action item",
+      "priority": "high / medium / low",
+      "suggested": false
+    }
+  ],
+  "openQuestions": ["Unresolved questions"],
+  "timeframe": {
+    "horizon": "immediate / short-term / long-term",
+    "deadline": "Mentioned deadline if any (optional)"
+  },
   "entities": [
     {
       "name": "Entity name",
@@ -246,6 +262,34 @@ Reflect expertise naturally through the angle of questions and direction of expl
 - Extract decision criteria when comparing options
 - Use "conflicted" when struggling with trade-offs
 - Examples: "time freedom", "financial stability", "growth opportunity", "family time", "social recognition"
+
+## Mood Classification Guide
+- positive: Optimistic, hopeful, motivated, relieved
+- negative: Anxious, down, frustrated, stressed
+- neutral: Matter-of-fact, calm, not particularly emotional
+- mixed: Fluctuating emotions, complex feelings
+- Use description to note emotional shifts (e.g., "Started anxious but became more positive through talking")
+
+## Next Actions Extraction Guide
+- Extract specific action items the user mentioned
+- Include actions suggested by the LLM during conversation (suggested: true)
+- priority: Based on urgency and importance
+  - high: Today to this week, involves important decisions
+  - medium: This month, should be done
+  - low: Someday, when there's time
+- Examples: "Talk to supervisor", "Re-read the book", "Create estimate"
+
+## Open Questions Extraction Guide
+- Record questions that weren't resolved in the conversation
+- Topics to explore in future sessions
+- Examples: "What do I really want to do?", "When to change jobs?", "How to prioritize?"
+
+## Timeframe Classification Guide
+- horizon: Temporal scope of the topic
+  - immediate: Today to this week (urgent issues)
+  - short-term: This month to 3 months (near future)
+  - long-term: 6+ months (career, life planning)
+- deadline: Record specific deadlines if mentioned ("by next week", "end of March")
 
 ## Entity Extraction Guide
 - Extract proper nouns (names of people, projects, companies, books, etc.)
@@ -283,10 +327,13 @@ Choose one based on the main theme:
 
 ## Notes
 - Tags can be in any language
-- Use empty arrays for items with no matches
+- Use empty arrays or null for items with no matches
 - Don't fill in with speculation
 - Only extract values that clearly appeared in conversation
 - Only extract proper nouns for entities (not common nouns)
-- Only extract explicitly mentioned relationships`,
+- Only extract explicitly mentioned relationships
+- Mood should reflect overall conversation impression
+- Distinguish user-initiated (suggested: false) vs LLM-suggested (suggested: true) actions
+- Only include unresolved questions in openQuestions (not resolved ones)`,
 	},
 };

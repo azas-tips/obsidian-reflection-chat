@@ -104,6 +104,29 @@ export interface SessionSummary {
 	entities: ExtractedEntity[];
 	relations: EntityRelation[];
 	values: ValueMention[];
+	mood?: MoodState;
+	nextActions?: NextAction[];
+	openQuestions?: string[];
+	timeframe?: Timeframe;
+}
+
+// Mood State
+export interface MoodState {
+	state: 'positive' | 'neutral' | 'negative' | 'mixed';
+	description?: string;
+}
+
+// Next Action
+export interface NextAction {
+	action: string;
+	priority: 'high' | 'medium' | 'low';
+	suggested: boolean; // true = LLM suggested, false = user mentioned
+}
+
+// Timeframe
+export interface Timeframe {
+	horizon: 'immediate' | 'short-term' | 'long-term';
+	deadline?: string;
 }
 
 // Session Category
