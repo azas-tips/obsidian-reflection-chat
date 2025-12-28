@@ -145,6 +145,36 @@ export const en: Translations = {
 		firstMention: 'First mentioned',
 		relatedSessions: 'Related Sessions',
 		relationshipPlaceholder: '(Add relationships here)',
+		goals: 'Related Goals',
+		suggestedActions: 'Suggested Actions',
+		nextActions: 'Next Actions',
+		progress: 'Progress',
+	},
+
+	goal: {
+		types: {
+			achievement: 'Achievement',
+			habit: 'Habit',
+			project: 'Project',
+			learning: 'Learning',
+		},
+		status: {
+			active: 'Active',
+			completed: 'Completed',
+			archived: 'Archived',
+		},
+		timeframe: {
+			shortTerm: 'Short-term (< 3 months)',
+			mediumTerm: 'Medium-term (3-12 months)',
+			longTerm: 'Long-term (1+ year)',
+		},
+		priority: {
+			high: 'High',
+			medium: 'Medium',
+			low: 'Low',
+		},
+		created: 'Created',
+		due: 'Due',
 	},
 
 	context: {
@@ -152,6 +182,7 @@ export const en: Translations = {
 		recentReflections: 'Recent Reflections',
 		relatedTopics: 'Related Past Topics',
 		relatedEntities: 'Related People & Projects',
+		relatedGoals: 'Active Goals',
 	},
 
 	report: {
@@ -276,6 +307,19 @@ Reflect expertise naturally through the angle of questions and direction of expl
       "context": "Context in which it was mentioned",
       "sentiment": "positive / negative / conflicted"
     }
+  ],
+  "goals": [
+    {
+      "name": "Goal name",
+      "description": "Goal description",
+      "type": "achievement / habit / project / learning",
+      "priority": "high / medium / low",
+      "timeframe": "short-term / medium-term / long-term",
+      "status": "active / completed / archived",
+      "context": "Context in which it was mentioned",
+      "suggestedActions": ["LLM-suggested actions towards the goal"],
+      "nextActions": ["User-mentioned concrete next steps"]
+    }
   ]
 }
 
@@ -312,6 +356,19 @@ Reflect expertise naturally through the angle of questions and direction of expl
   - short-term: This month to 3 months (near future)
   - long-term: 6+ months (career, life planning)
 - deadline: Record specific deadlines if mentioned ("by next week", "end of March")
+
+## Goal Extraction Guide
+- Extract goals or objectives the user wants to achieve
+- Look for expressions like "I want to...", "My goal is...", "I'm aiming for..."
+- Type classification:
+  - achievement: Achievement goals (certification, promotion, revenue targets)
+  - habit: Habit formation (daily exercise, early rising, reading habit)
+  - project: Project completion (new business, creative work)
+  - learning: Learning goals (programming, language learning)
+- Determine priority from user's mention frequency and enthusiasm
+- suggestedActions: LLM's recommendations for achieving the goal
+- nextActions: Concrete next steps mentioned by the user
+- Set status appropriately if progress toward existing goal is mentioned
 
 ## Entity Extraction Guide
 - Extract proper nouns (names of people, projects, companies, books, etc.)
@@ -356,6 +413,8 @@ Choose one based on the main theme:
 - Only extract explicitly mentioned relationships
 - Mood should reflect overall conversation impression
 - Distinguish user-initiated (suggested: false) vs LLM-suggested (suggested: true) actions
-- Only include unresolved questions in openQuestions (not resolved ones)`,
+- Only include unresolved questions in openQuestions (not resolved ones)
+- Only extract goals when clear objectives/targets are mentioned
+- suggestedActions are LLM proposals, nextActions are from user statements`,
 	},
 };

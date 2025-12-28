@@ -155,6 +155,37 @@ export interface Translations {
 		firstMention: string;
 		relatedSessions: string;
 		relationshipPlaceholder: string;
+		goals: string;
+		suggestedActions: string;
+		nextActions: string;
+		progress: string;
+	};
+
+	// Goal
+	goal: {
+		types: {
+			achievement: string;
+			habit: string;
+			project: string;
+			learning: string;
+		};
+		status: {
+			active: string;
+			completed: string;
+			archived: string;
+		};
+		timeframe: {
+			shortTerm: string;
+			mediumTerm: string;
+			longTerm: string;
+		};
+		priority: {
+			high: string;
+			medium: string;
+			low: string;
+		};
+		created: string;
+		due: string;
 	};
 
 	// Context
@@ -163,6 +194,7 @@ export interface Translations {
 		recentReflections: string;
 		relatedTopics: string;
 		relatedEntities: string;
+		relatedGoals: string;
 	};
 
 	// Report

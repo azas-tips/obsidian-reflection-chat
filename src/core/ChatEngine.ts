@@ -5,6 +5,8 @@ import type {
 	ChatMessage,
 	SessionCategory,
 	EntityType,
+	GoalType,
+	GoalStatus,
 } from '../types';
 import { OpenRouterClient } from '../infrastructure/OpenRouterClient';
 import { getTranslations } from '../i18n';
@@ -177,6 +179,16 @@ export class ChatEngine {
 			}
 		}
 
+		// Add goal information
+		if (context.linkedGoals.length > 0) {
+			prompt += `\n\n## ${t.context.relatedGoals}\n`;
+			for (const goal of context.linkedGoals) {
+				const typeLabel = t.goal.types[goal.type] || goal.type;
+				const priorityLabel = t.goal.priority[goal.priority] || goal.priority;
+				prompt += `- [[${goal.name}]] (${typeLabel}, ${priorityLabel}): ${goal.description}\n`;
+			}
+		}
+
 		return prompt;
 	}
 
@@ -209,12 +221,50 @@ export class ChatEngine {
 
 	private static readonly VALID_SENTIMENTS = ['positive', 'negative', 'conflicted'] as const;
 
+	private static readonly VALID_MOOD_STATES = [
+		'positive',
+		'neutral',
+		'negative',
+		'mixed',
+	] as const;
+
+	private static readonly VALID_PRIORITIES = ['high', 'medium', 'low'] as const;
+
+	private static readonly VALID_HORIZONS = ['immediate', 'short-term', 'long-term'] as const;
+
+	private static readonly VALID_GOAL_TYPES: readonly GoalType[] = [
+		'achievement',
+		'habit',
+		'project',
+		'learning',
+	] as const;
+
+	private static readonly VALID_GOAL_STATUSES: readonly GoalStatus[] = [
+		'active',
+		'completed',
+		'archived',
+	] as const;
+
+	private static readonly VALID_GOAL_TIMEFRAMES: readonly (
+		| 'short-term'
+		| 'medium-term'
+		| 'long-term'
+	)[] = ['short-term', 'medium-term', 'long-term'] as const;
+
 	// Limits to prevent DoS from malicious/buggy LLM responses
 	private static readonly MAX_ENTITIES = 50;
 	private static readonly MAX_RELATIONS = 50;
 	private static readonly MAX_VALUES = 50;
 	private static readonly MAX_TAGS = 20;
 	private static readonly MAX_STRING_ITEMS = 20; // For decisions, insights
+	private static readonly MAX_GOALS = 20;
+	private static readonly MAX_ACTIONS = 10;
+
+	// String length limits to prevent memory issues
+	private static readonly MAX_GOAL_NAME_LENGTH = 200;
+	private static readonly MAX_GOAL_DESCRIPTION_LENGTH = 1000;
+	private static readonly MAX_GOAL_CONTEXT_LENGTH = 500;
+	private static readonly MAX_ACTION_LENGTH = 500;
 
 	/**
 	 * Validate and sanitize parsed summary response to ensure type safety
@@ -349,6 +399,186 @@ export class ChatEngine {
 			logger.warn('LLM response has empty "tags" array');
 		}
 
+		// Validate mood (optional)
+		let mood:
+			| { state: 'positive' | 'neutral' | 'negative' | 'mixed'; description?: string }
+			| undefined;
+		if (obj.mood && typeof obj.mood === 'object') {
+			const moodObj = obj.mood as Record<string, unknown>;
+			const moodState = moodObj.state;
+			if (
+				typeof moodState === 'string' &&
+				(ChatEngine.VALID_MOOD_STATES as readonly string[]).includes(moodState)
+			) {
+				mood = {
+					state: moodState as 'positive' | 'neutral' | 'negative' | 'mixed',
+					description:
+						typeof moodObj.description === 'string' ? moodObj.description : undefined,
+				};
+			}
+		}
+
+		// Helper to validate priority
+		const validatePriority = (priority: unknown): 'high' | 'medium' | 'low' => {
+			if (
+				typeof priority === 'string' &&
+				(ChatEngine.VALID_PRIORITIES as readonly string[]).includes(priority)
+			) {
+				return priority as 'high' | 'medium' | 'low';
+			}
+			return 'medium';
+		};
+
+		// Validate nextActions (optional)
+		const nextActions: Array<{
+			action: string;
+			priority: 'high' | 'medium' | 'low';
+			suggested: boolean;
+		}> = [];
+		if (Array.isArray(obj.nextActions)) {
+			for (const a of obj.nextActions) {
+				if (nextActions.length >= ChatEngine.MAX_ACTIONS) break;
+				if (typeof a !== 'object' || a === null) continue;
+				const record = a as Record<string, unknown>;
+				const action = typeof record.action === 'string' ? record.action : '';
+				if (!action) continue;
+				nextActions.push({
+					action,
+					priority: validatePriority(record.priority),
+					suggested: typeof record.suggested === 'boolean' ? record.suggested : false,
+				});
+			}
+		}
+
+		// Validate openQuestions (optional)
+		const openQuestions = getStringArray('openQuestions', ChatEngine.MAX_STRING_ITEMS);
+
+		// Validate timeframe (optional)
+		let timeframe:
+			| { horizon: 'immediate' | 'short-term' | 'long-term'; deadline?: string }
+			| undefined;
+		if (obj.timeframe && typeof obj.timeframe === 'object') {
+			const tfObj = obj.timeframe as Record<string, unknown>;
+			const horizon = tfObj.horizon;
+			if (
+				typeof horizon === 'string' &&
+				(ChatEngine.VALID_HORIZONS as readonly string[]).includes(horizon)
+			) {
+				timeframe = {
+					horizon: horizon as 'immediate' | 'short-term' | 'long-term',
+					deadline: typeof tfObj.deadline === 'string' ? tfObj.deadline : undefined,
+				};
+			}
+		}
+
+		// Helper to validate goal type
+		const validateGoalType = (type: unknown): GoalType => {
+			if (
+				typeof type === 'string' &&
+				ChatEngine.VALID_GOAL_TYPES.includes(type as GoalType)
+			) {
+				return type as GoalType;
+			}
+			return 'achievement';
+		};
+
+		// Helper to validate goal status
+		const validateGoalStatus = (status: unknown): GoalStatus => {
+			if (
+				typeof status === 'string' &&
+				ChatEngine.VALID_GOAL_STATUSES.includes(status as GoalStatus)
+			) {
+				return status as GoalStatus;
+			}
+			return 'active';
+		};
+
+		// Helper to validate goal timeframe
+		const validateGoalTimeframe = (tf: unknown): 'short-term' | 'medium-term' | 'long-term' => {
+			if (
+				typeof tf === 'string' &&
+				(ChatEngine.VALID_GOAL_TIMEFRAMES as readonly string[]).includes(tf)
+			) {
+				return tf as 'short-term' | 'medium-term' | 'long-term';
+			}
+			return 'medium-term';
+		};
+
+		// Validate goals array (optional)
+		const goals: Array<{
+			name: string;
+			description: string;
+			type: GoalType;
+			priority: 'high' | 'medium' | 'low';
+			timeframe: 'short-term' | 'medium-term' | 'long-term';
+			status: GoalStatus;
+			context: string;
+			suggestedActions: string[];
+			nextActions: string[];
+		}> = [];
+		if (Array.isArray(obj.goals)) {
+			for (const g of obj.goals) {
+				if (goals.length >= ChatEngine.MAX_GOALS) break;
+				if (typeof g !== 'object' || g === null) continue;
+				const record = g as Record<string, unknown>;
+
+				// Extract, trim, and truncate name
+				const rawName = typeof record.name === 'string' ? record.name.trim() : '';
+				const name = rawName.slice(0, ChatEngine.MAX_GOAL_NAME_LENGTH);
+				if (!name) continue; // Skip if no name
+
+				// Extract suggestedActions array with length limit
+				const suggestedActions: string[] = [];
+				if (Array.isArray(record.suggestedActions)) {
+					for (const action of record.suggestedActions) {
+						if (suggestedActions.length >= ChatEngine.MAX_ACTIONS) break;
+						if (typeof action === 'string' && action.trim()) {
+							const trimmedAction = action.trim();
+							suggestedActions.push(
+								trimmedAction.slice(0, ChatEngine.MAX_ACTION_LENGTH)
+							);
+						}
+					}
+				}
+
+				// Extract nextActions array with length limit
+				const goalNextActions: string[] = [];
+				if (Array.isArray(record.nextActions)) {
+					for (const action of record.nextActions) {
+						if (goalNextActions.length >= ChatEngine.MAX_ACTIONS) break;
+						if (typeof action === 'string' && action.trim()) {
+							const trimmedAction = action.trim();
+							goalNextActions.push(
+								trimmedAction.slice(0, ChatEngine.MAX_ACTION_LENGTH)
+							);
+						}
+					}
+				}
+
+				// Extract, trim, and truncate description and context
+				const description =
+					typeof record.description === 'string'
+						? record.description.trim().slice(0, ChatEngine.MAX_GOAL_DESCRIPTION_LENGTH)
+						: '';
+				const context =
+					typeof record.context === 'string'
+						? record.context.trim().slice(0, ChatEngine.MAX_GOAL_CONTEXT_LENGTH)
+						: '';
+
+				goals.push({
+					name,
+					description,
+					type: validateGoalType(record.type),
+					priority: validatePriority(record.priority),
+					timeframe: validateGoalTimeframe(record.timeframe),
+					status: validateGoalStatus(record.status),
+					context,
+					suggestedActions,
+					nextActions: goalNextActions,
+				});
+			}
+		}
+
 		return {
 			summary,
 			tags,
@@ -358,6 +588,11 @@ export class ChatEngine {
 			entities,
 			relations,
 			values,
+			mood,
+			nextActions: nextActions.length > 0 ? nextActions : undefined,
+			openQuestions: openQuestions.length > 0 ? openQuestions : undefined,
+			timeframe,
+			goals: goals.length > 0 ? goals : undefined,
 		};
 	}
 }

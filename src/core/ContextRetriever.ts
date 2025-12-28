@@ -1,6 +1,13 @@
 import type { App } from 'obsidian';
 import { TFile } from 'obsidian';
-import type { ConversationContext, NoteSummary, SearchResult, Entity, Message } from '../types';
+import type {
+	ConversationContext,
+	NoteSummary,
+	SearchResult,
+	Entity,
+	Goal,
+	Message,
+} from '../types';
 import { Embedder } from '../infrastructure/Embedder';
 import { VectorStore, VectorMetadata } from '../infrastructure/VectorStore';
 import {
@@ -83,16 +90,18 @@ export class ContextRetriever {
 	}
 
 	async retrieve(currentMessage: string, history: Message[]): Promise<ConversationContext> {
-		const [recentNotes, semanticMatches, linkedEntities] = await Promise.all([
+		const [recentNotes, semanticMatches, linkedEntities, linkedGoals] = await Promise.all([
 			this.getRecentNotes(),
 			this.getSemanticMatches(currentMessage, history),
 			this.getLinkedEntities(currentMessage, history),
+			this.getLinkedGoals(currentMessage, history),
 		]);
 
 		return {
 			recentNotes,
 			semanticMatches,
 			linkedEntities,
+			linkedGoals,
 		};
 	}
 
@@ -259,6 +268,11 @@ export class ContextRetriever {
 			const content = await this.app.vault.read(file);
 			const { frontmatter, body } = parseFrontmatter(content);
 
+			// Skip if this is a goal note
+			if (getFrontmatterString(frontmatter, 'type', '') === 'goal') {
+				return null;
+			}
+
 			// Extract description from body (first paragraph after Overview section)
 			// Try all language patterns since notes may have been created in any language
 			let description = '';
@@ -293,6 +307,142 @@ export class ContextRetriever {
 		} catch (error) {
 			logger.error(
 				`Error loading entity ${name}:`,
+				error instanceof Error ? error : undefined
+			);
+			return null;
+		}
+	}
+
+	private async getLinkedGoals(currentMessage: string, history: Message[]): Promise<Goal[]> {
+		// Get all goal files from entities folder
+		const goalFiles = this.app.vault
+			.getMarkdownFiles()
+			.filter((f) => f.path.startsWith(this.entitiesFolder + '/'));
+
+		// Load goals in parallel and filter only active goals
+		const goalPromises = goalFiles.map((file) => this.loadGoal(file));
+		const loadedGoals = await Promise.all(goalPromises);
+
+		// Filter out nulls and only return active goals
+		const activeGoals = loadedGoals.filter(
+			(goal): goal is Goal => goal !== null && goal.status === 'active'
+		);
+
+		// Check if any goals are mentioned in the current message or history
+		let allText = [...history.map((m) => m.content), currentMessage].join(' ');
+		if (allText.length > ContextRetriever.MAX_INPUT_LENGTH_FOR_REGEX) {
+			allText = allText.slice(0, ContextRetriever.MAX_INPUT_LENGTH_FOR_REGEX);
+		}
+		const lowerText = allText.toLowerCase();
+
+		// Return goals that are mentioned or are recent (created in the last contextWindowDays)
+		const cutoffDate = new Date();
+		cutoffDate.setDate(cutoffDate.getDate() - this.contextWindowDays);
+		const cutoffStr = cutoffDate.toISOString().split('T')[0];
+
+		return activeGoals.filter((goal) => {
+			// Check if goal is mentioned in text
+			const lowerName = goal.name.toLowerCase();
+			if (lowerText.includes(lowerName)) {
+				return true;
+			}
+
+			// Check if goal was created recently
+			// Validate date format (YYYY-MM-DD) before comparison
+			const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+			if (!goal.createdAt || !dateRegex.test(goal.createdAt)) {
+				logger.warn(`Goal "${goal.name}" has invalid createdAt date: "${goal.createdAt}"`);
+				return false;
+			}
+			if (goal.createdAt >= cutoffStr) {
+				return true;
+			}
+
+			return false;
+		});
+	}
+
+	private async loadGoal(file: TFile): Promise<Goal | null> {
+		try {
+			const content = await this.app.vault.read(file);
+			const { frontmatter, body } = parseFrontmatter(content);
+
+			// Check if this is a goal note
+			if (getFrontmatterString(frontmatter, 'type', '') !== 'goal') {
+				return null;
+			}
+
+			// Extract description from body (first paragraph after Overview section)
+			let description = '';
+			const overviewPatterns = getAllTranslations().map(
+				(t) =>
+					new RegExp(
+						`##\\s*${escapeRegex(t.notes.overview)}\\s*\\n([\\s\\S]*?)(?=\\n##|$)`
+					)
+			);
+
+			for (const pattern of overviewPatterns) {
+				const overviewMatch = body.match(pattern);
+				if (overviewMatch) {
+					description = overviewMatch[1].trim().split('\n')[0];
+					break;
+				}
+			}
+
+			// Validate goal type
+			const goalType = getFrontmatterString(frontmatter, 'goal_type', 'achievement');
+			const validGoalTypes = ['achievement', 'habit', 'project', 'learning'];
+			const type = validGoalTypes.includes(goalType)
+				? (goalType as Goal['type'])
+				: 'achievement';
+
+			// Validate priority
+			const priority = getFrontmatterString(frontmatter, 'priority', 'medium');
+			const validPriorities = ['high', 'medium', 'low'];
+			const validPriority = validPriorities.includes(priority)
+				? (priority as Goal['priority'])
+				: 'medium';
+
+			// Validate timeframe
+			const timeframe = getFrontmatterString(frontmatter, 'timeframe', 'medium-term');
+			const validTimeframes = ['short-term', 'medium-term', 'long-term'];
+			const validTimeframe = validTimeframes.includes(timeframe)
+				? (timeframe as Goal['timeframe'])
+				: 'medium-term';
+
+			// Validate status
+			const status = getFrontmatterString(frontmatter, 'status', 'active');
+			const validStatuses = ['active', 'completed', 'archived'];
+			const validStatus = validStatuses.includes(status)
+				? (status as Goal['status'])
+				: 'active';
+
+			// Validate dueDate format (YYYY-MM-DD)
+			const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+			const rawDueDate = getFrontmatterString(frontmatter, 'due', undefined);
+			let validDueDate: string | undefined = undefined;
+			if (rawDueDate) {
+				if (dateRegex.test(rawDueDate)) {
+					validDueDate = rawDueDate;
+				} else {
+					logger.warn(`Goal "${file.basename}" has invalid due date: "${rawDueDate}"`);
+				}
+			}
+
+			return {
+				name: file.basename,
+				description,
+				type,
+				priority: validPriority,
+				timeframe: validTimeframe,
+				status: validStatus,
+				path: file.path,
+				createdAt: getFrontmatterString(frontmatter, 'created', ''),
+				dueDate: validDueDate,
+			};
+		} catch (error) {
+			logger.error(
+				`Error loading goal ${file.basename}:`,
 				error instanceof Error ? error : undefined
 			);
 			return null;

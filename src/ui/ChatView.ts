@@ -871,6 +871,7 @@ export class ChatView extends ItemView {
 			recentNotes: [],
 			semanticMatches: [],
 			linkedEntities: [],
+			linkedGoals: [],
 		};
 	}
 

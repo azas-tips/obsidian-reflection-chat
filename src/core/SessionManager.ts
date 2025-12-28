@@ -5,6 +5,7 @@ import type {
 	Message,
 	SessionSummary,
 	ExtractedEntity,
+	ExtractedGoal,
 	ConversationContext,
 	ModelInfo,
 } from '../types';
@@ -39,6 +40,7 @@ export class SessionManager {
 				recentNotes: [],
 				semanticMatches: [],
 				linkedEntities: [],
+				linkedGoals: [],
 			},
 		};
 		return this.currentSession;
@@ -141,6 +143,11 @@ export class SessionManager {
 			// Create entity notes
 			await this.createEntityNotes(summary.entities, dateStr);
 
+			// Create goal notes
+			if (summary.goals && summary.goals.length > 0) {
+				await this.createGoalNotes(summary.goals, dateStr);
+			}
+
 			// Clear session
 			this.currentSession = null;
 
@@ -178,6 +185,116 @@ export class SessionManager {
 				);
 			}
 		}
+	}
+
+	async createGoalNotes(goals: ExtractedGoal[], sessionDate: string): Promise<void> {
+		await this.ensureFolder(this.entitiesFolder);
+
+		// Process goals in parallel with error handling for each
+		const results = await Promise.allSettled(
+			goals.map((goal) => this.createOrUpdateGoalNote(goal, sessionDate))
+		);
+
+		// Log any failures
+		for (let i = 0; i < results.length; i++) {
+			const result = results[i];
+			if (result.status === 'rejected') {
+				logger.error(
+					`Failed to create/update goal note for "${goals[i].name}":`,
+					result.reason instanceof Error ? result.reason : undefined
+				);
+			}
+		}
+	}
+
+	/**
+	 * Create or update a single goal note
+	 */
+	private async createOrUpdateGoalNote(goal: ExtractedGoal, sessionDate: string): Promise<void> {
+		const t = getTranslations();
+		const safeName = sanitizeFileName(goal.name);
+		const fileName = `${safeName}.md`;
+		const filePath = `${this.entitiesFolder}/${fileName}`;
+		const existingFile = this.app.vault.getAbstractFileByPath(filePath);
+
+		if (existingFile instanceof TFile) {
+			// Append to existing goal note
+			const existingContent = await this.app.vault.read(existingFile);
+			const sessionLink = `- [[${sessionDate}]] - ${goal.context}`;
+
+			if (!existingContent.includes(sessionLink)) {
+				// Find the related sessions section and append
+				let updatedContent = this.appendToSection(
+					existingContent,
+					t.notes.relatedSessions,
+					sessionLink
+				);
+
+				// Also append to progress section
+				const progressEntry = `- ${sessionDate}: ${goal.context}`;
+				updatedContent = this.appendToSection(
+					updatedContent,
+					t.notes.progress,
+					progressEntry
+				);
+
+				await this.app.vault.modify(existingFile, updatedContent);
+			}
+		} else {
+			// Create new goal note
+			const content = this.formatGoalNote(goal, sessionDate);
+			await this.app.vault.create(filePath, content);
+		}
+	}
+
+	private formatGoalNote(goal: ExtractedGoal, sessionDate: string): string {
+		const t = getTranslations();
+
+		// Build suggested actions section
+		let suggestedActionsSection = '';
+		if (goal.suggestedActions && goal.suggestedActions.length > 0) {
+			suggestedActionsSection = `\n## ${t.notes.suggestedActions}\n`;
+			for (const action of goal.suggestedActions) {
+				suggestedActionsSection += `- ${action}\n`;
+			}
+		}
+
+		// Build next actions section
+		let nextActionsSection = '';
+		if (goal.nextActions && goal.nextActions.length > 0) {
+			nextActionsSection = `\n## ${t.notes.nextActions}\n`;
+			for (const action of goal.nextActions) {
+				nextActionsSection += `- [ ] ${action}\n`;
+			}
+		}
+
+		// Sanitize all values for YAML frontmatter
+		const safeType = this.sanitizeYamlValue(goal.type);
+		const safePriority = this.sanitizeYamlValue(goal.priority);
+		const safeTimeframe = this.sanitizeYamlValue(goal.timeframe);
+		const safeStatus = this.sanitizeYamlValue(goal.status);
+		const safeDate = this.sanitizeYamlValue(sessionDate);
+
+		return `---
+type: goal
+goal_type: ${safeType}
+priority: ${safePriority}
+timeframe: ${safeTimeframe}
+status: ${safeStatus}
+created: ${safeDate}
+---
+
+# ${goal.name}
+
+## ${t.notes.overview}
+${goal.description}
+${suggestedActionsSection}${nextActionsSection}
+## ${t.notes.progress}
+- ${sessionDate}: ${goal.context}
+
+## ${t.notes.relatedSessions}
+- [[${sessionDate}]] - ${goal.context}
+`;
 	}
 
 	/**

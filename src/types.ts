@@ -64,6 +64,7 @@ export interface ConversationContext {
 	recentNotes: NoteSummary[];
 	semanticMatches: SearchResult[];
 	linkedEntities: Entity[];
+	linkedGoals: Goal[];
 }
 
 // Note Metadata
@@ -108,6 +109,74 @@ export interface SessionSummary {
 	nextActions?: NextAction[];
 	openQuestions?: string[];
 	timeframe?: Timeframe;
+	goals?: ExtractedGoal[];
+}
+
+/**
+ * Goal Type
+ * - achievement: One-time accomplishments (certification, promotion)
+ * - habit: Recurring behaviors to build (daily exercise, reading)
+ * - project: Deliverables to complete (new business, creative work)
+ * - learning: Skills or knowledge to acquire (programming, language)
+ */
+export type GoalType = 'achievement' | 'habit' | 'project' | 'learning';
+
+/**
+ * Goal Status
+ * - active: Currently being pursued
+ * - completed: Successfully achieved
+ * - archived: Paused or abandoned
+ */
+export type GoalStatus = 'active' | 'completed' | 'archived';
+
+/**
+ * Extracted Goal (from conversation)
+ * Represents a goal extracted by LLM from a coaching session
+ */
+export interface ExtractedGoal {
+	/** Goal name/title */
+	name: string;
+	/** Detailed description of what the goal entails */
+	description: string;
+	/** Category of goal */
+	type: GoalType;
+	/** Importance level */
+	priority: 'high' | 'medium' | 'low';
+	/** Expected time horizon to achieve */
+	timeframe: 'short-term' | 'medium-term' | 'long-term';
+	/** Current progress state */
+	status: GoalStatus;
+	/** Context from conversation where goal was mentioned */
+	context: string;
+	/** Actions recommended by LLM to achieve the goal */
+	suggestedActions: string[];
+	/** Concrete next steps mentioned by the user */
+	nextActions: string[];
+}
+
+/**
+ * Goal (stored in notes)
+ * Represents a goal persisted in the vault as a note file
+ */
+export interface Goal {
+	/** Goal name/title (also used as filename) */
+	name: string;
+	/** Detailed description of what the goal entails */
+	description: string;
+	/** Category of goal */
+	type: GoalType;
+	/** Importance level */
+	priority: 'high' | 'medium' | 'low';
+	/** Expected time horizon to achieve */
+	timeframe: 'short-term' | 'medium-term' | 'long-term';
+	/** Current progress state */
+	status: GoalStatus;
+	/** Path to the goal note file in vault */
+	path: string;
+	/** Creation date in YYYY-MM-DD format */
+	createdAt: string;
+	/** Target completion date in YYYY-MM-DD format (optional) */
+	dueDate?: string;
 }
 
 // Mood State

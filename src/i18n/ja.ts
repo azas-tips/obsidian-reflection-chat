@@ -146,6 +146,36 @@ export const ja: Translations = {
 		firstMention: '初回言及',
 		relatedSessions: '関連するセッション',
 		relationshipPlaceholder: '（関係性があれば追記）',
+		goals: '関連するゴール',
+		suggestedActions: 'おすすめのアクション',
+		nextActions: '次のアクション',
+		progress: '進捗',
+	},
+
+	goal: {
+		types: {
+			achievement: '達成目標',
+			habit: '習慣形成',
+			project: 'プロジェクト',
+			learning: '学習目標',
+		},
+		status: {
+			active: '進行中',
+			completed: '完了',
+			archived: '保留',
+		},
+		timeframe: {
+			shortTerm: '短期（〜3ヶ月）',
+			mediumTerm: '中期（3ヶ月〜1年）',
+			longTerm: '長期（1年以上）',
+		},
+		priority: {
+			high: '高',
+			medium: '中',
+			low: '低',
+		},
+		created: '作成日',
+		due: '期限',
 	},
 
 	context: {
@@ -153,6 +183,7 @@ export const ja: Translations = {
 		recentReflections: '直近の振り返り',
 		relatedTopics: '関連する過去の話題',
 		relatedEntities: '関連する人物・プロジェクト',
+		relatedGoals: 'アクティブなゴール',
 	},
 
 	report: {
@@ -278,6 +309,19 @@ export const ja: Translations = {
       "context": "どういう文脈で言及されたか",
       "sentiment": "positive / negative / conflicted"
     }
+  ],
+  "goals": [
+    {
+      "name": "ゴール名",
+      "description": "ゴールの説明",
+      "type": "achievement / habit / project / learning",
+      "priority": "high / medium / low",
+      "timeframe": "short-term / medium-term / long-term",
+      "status": "active / completed / archived",
+      "context": "どういう文脈で言及されたか",
+      "suggestedActions": ["LLMが提案するゴール達成に向けたアクション"],
+      "nextActions": ["ユーザーが言及した具体的な次のアクション"]
+    }
   ]
 }
 
@@ -314,6 +358,19 @@ export const ja: Translations = {
   - short-term: 今月〜3ヶ月（近い将来）
   - long-term: 半年以上（キャリア、人生設計）
 - deadline: 「来週までに」「3月末」など具体的期限があれば記載
+
+## ゴール（goals）の抽出ガイド
+- ユーザーが達成したい目標・なりたい姿を抽出
+- 「〜したい」「〜を目指している」「〜が目標」などの表現に注目
+- typeの判定:
+  - achievement: 達成目標（資格取得、昇進、目標売上など）
+  - habit: 習慣形成（毎日運動、早起き、読書習慣など）
+  - project: プロジェクト完遂（新規事業、制作物完成など）
+  - learning: 学習目標（プログラミング習得、語学学習など）
+- priorityはユーザーの言及頻度・熱量から判断
+- suggestedActionsはLLMがゴール達成に有効と考えるアクションを提案
+- nextActionsはユーザーが具体的に言及した次のステップ
+- 既存ゴールへの進捗言及があれば status を適切に設定
 
 ## エンティティの抽出ガイド
 - 固有名詞（人物名、プロジェクト名、会社名、書籍名など）を抽出
@@ -358,6 +415,8 @@ export const ja: Translations = {
 - relationsは明示的に言及された関係のみ
 - moodは会話全体の印象から判断
 - nextActionsはユーザー発案（suggested: false）とLLM提案（suggested: true）を区別
-- openQuestionsは答えが出なかった問いのみ（解決済みは含めない）`,
+- openQuestionsは答えが出なかった問いのみ（解決済みは含めない）
+- goalsは明確な目標・ゴールが言及された場合のみ抽出
+- suggestedActionsはLLMの提案、nextActionsはユーザーの発言から抽出`,
 	},
 };
