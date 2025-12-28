@@ -131,12 +131,12 @@ entities/
 OpenRouterを通じて様々なモデルが利用可能です：
 
 **チャット/要約モデル:**
-- Anthropic: Claude Sonnet 4.5, Claude Haiku 4.5, Claude Opus 4
-- OpenAI: GPT-4o, GPT-4o-mini, o1シリーズ
-- Google: Gemini 2.0 Flash, Gemini Pro
-- xAI: Grok
-- DeepSeek: DeepSeek Chat, DeepSeek Reasoner
-- Qwen: Qwen Turbo, Qwen Plus, Qwen Max
+- Anthropic: Claude Opus 4.5, Claude Sonnet 4.5, Claude Haiku 4.5
+- OpenAI: GPT-5.2, GPT-5.2 Pro, GPT-5.1, GPT-4.1, o3, o3 Pro, o4-mini
+- Google: Gemini 3 Pro/Flash, Gemini 2.5 Pro/Flash
+- xAI: Grok 4, Grok 4.1 Fast, Grok 3
+- DeepSeek: DeepSeek V3.2, DeepSeek R1
+- Qwen: Qwen3 Max, Qwen3 Coder, QwQ 32B
 - その他多数
 
 **埋め込みモデル:**
