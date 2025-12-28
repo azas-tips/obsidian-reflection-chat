@@ -74,26 +74,17 @@ export class SettingsTab extends PluginSettingTab {
 			.setName(t.settings.api.chatModel)
 			.setDesc(t.settings.api.chatModelDesc)
 			.addDropdown((dropdown) => {
-				// Add default options and track them to avoid duplicates
-				const defaultChatModels = [
-					'anthropic/claude-sonnet-4.5',
-					'anthropic/claude-haiku-4.5',
-					'openai/gpt-4o',
-					'openai/gpt-4o-mini',
-				];
-				const addedModels = new Set<string>(defaultChatModels);
-
-				dropdown.addOption('anthropic/claude-sonnet-4.5', 'Claude Sonnet 4.5');
-				dropdown.addOption('anthropic/claude-haiku-4.5', 'Claude Haiku 4.5');
-				dropdown.addOption('openai/gpt-4o', 'GPT-4o');
-				dropdown.addOption('openai/gpt-4o-mini', 'GPT-4o Mini');
-
-				// Add fetched models (use Set instead of DOM query to avoid CSS selector injection)
-				for (const model of this.modelOptions) {
-					if (!addedModels.has(model.value)) {
+				// Add models fetched from OpenRouter
+				if (this.modelOptions.length > 0) {
+					for (const model of this.modelOptions) {
 						dropdown.addOption(model.value, model.label);
-						addedModels.add(model.value);
 					}
+				} else {
+					// Fallback: show current setting if no models fetched
+					dropdown.addOption(
+						this.plugin.settings.chatModel,
+						this.plugin.settings.chatModel
+					);
 				}
 
 				dropdown.setValue(this.plugin.settings.chatModel);
@@ -107,26 +98,17 @@ export class SettingsTab extends PluginSettingTab {
 			.setName(t.settings.api.summaryModel)
 			.setDesc(t.settings.api.summaryModelDesc)
 			.addDropdown((dropdown) => {
-				// Add default options (lightweight models first) and track them
-				const defaultSummaryModels = [
-					'anthropic/claude-haiku-4.5',
-					'openai/gpt-4o-mini',
-					'anthropic/claude-sonnet-4.5',
-					'openai/gpt-4o',
-				];
-				const addedModels = new Set<string>(defaultSummaryModels);
-
-				dropdown.addOption('anthropic/claude-haiku-4.5', 'Claude Haiku 4.5');
-				dropdown.addOption('openai/gpt-4o-mini', 'GPT-4o Mini');
-				dropdown.addOption('anthropic/claude-sonnet-4.5', 'Claude Sonnet 4.5');
-				dropdown.addOption('openai/gpt-4o', 'GPT-4o');
-
-				// Add fetched models (use Set instead of DOM query to avoid CSS selector injection)
-				for (const model of this.modelOptions) {
-					if (!addedModels.has(model.value)) {
+				// Add models fetched from OpenRouter
+				if (this.modelOptions.length > 0) {
+					for (const model of this.modelOptions) {
 						dropdown.addOption(model.value, model.label);
-						addedModels.add(model.value);
 					}
+				} else {
+					// Fallback: show current setting if no models fetched
+					dropdown.addOption(
+						this.plugin.settings.summaryModel,
+						this.plugin.settings.summaryModel
+					);
 				}
 
 				dropdown.setValue(this.plugin.settings.summaryModel);
