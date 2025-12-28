@@ -1,4 +1,4 @@
-import { ItemView, WorkspaceLeaf, setIcon, Notice } from 'obsidian';
+import { ItemView, WorkspaceLeaf, setIcon, Notice, MarkdownRenderer, Component } from 'obsidian';
 import type ReflectionChatPlugin from '../main';
 import type { Message, ConversationContext } from '../types';
 import { openPluginSettings } from '../types';
@@ -469,7 +469,13 @@ export class ChatView extends ItemView {
 		icon.textContent = message.role === 'user' ? '👤' : '🤖';
 
 		const content = messageEl.createDiv({ cls: 'reflection-chat-message-content' });
-		content.textContent = message.content;
+
+		// Render markdown for assistant messages, plain text for user messages
+		if (message.role === 'assistant') {
+			MarkdownRenderer.render(this.app, message.content, content, '', new Component());
+		} else {
+			content.textContent = message.content;
+		}
 	}
 
 	private renderStreamingMessage(content: string): void {
@@ -531,6 +537,19 @@ export class ChatView extends ItemView {
 			streamingEl.removeClass('streaming');
 			const cursor = streamingEl.querySelector('.reflection-chat-cursor');
 			cursor?.remove();
+
+			// Re-render content as markdown
+			const contentEl = streamingEl.querySelector('.reflection-chat-message-content');
+			if (contentEl instanceof HTMLElement && this.streamingContent) {
+				contentEl.empty();
+				MarkdownRenderer.render(
+					this.app,
+					this.streamingContent,
+					contentEl,
+					'',
+					new Component()
+				);
+			}
 		}
 
 		// Clear cached reference
