@@ -361,7 +361,11 @@ export class ChatView extends ItemView {
 		await super.setState(state, result);
 	}
 
-	private updateStatus(): void {
+	/**
+	 * Update the status bar to reflect current embedding and API configuration state.
+	 * Called on view open and when embedding initialization completes.
+	 */
+	updateStatus(): void {
 		if (!this.statusBar) return;
 		this.statusBar.empty();
 
@@ -370,10 +374,12 @@ export class ChatView extends ItemView {
 		const isEmbeddingReady = this.plugin.embedder?.isReady();
 
 		if (!isConfigured) {
+			this.statusBar.style.display = 'block';
 			this.statusBar.addClass('warning');
 			setIcon(this.statusBar.createSpan(), 'alert-triangle');
 			this.statusBar.createSpan({ text: t.notices.apiKeyNotSet });
 		} else if (!isEmbeddingReady) {
+			this.statusBar.style.display = 'block';
 			this.statusBar.removeClass('warning');
 			setIcon(this.statusBar.createSpan(), 'loader');
 			this.statusBar.createSpan({ text: t.notices.embeddingLoading });

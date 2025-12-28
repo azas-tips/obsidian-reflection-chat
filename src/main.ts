@@ -154,6 +154,9 @@ export default class ReflectionChatPlugin extends Plugin {
 			// Initialize note indexer (registers file watchers)
 			await this.noteIndexer.initialize();
 
+			// Update chat views to reflect embedding ready state
+			this.updateChatViewStatus();
+
 			// Auto-index if enabled
 			if (this.settings.autoIndex) {
 				const stats = await this.vectorStore.getStats();
@@ -169,6 +172,29 @@ export default class ReflectionChatPlugin extends Plugin {
 			);
 			// Notify user of initialization failure
 			new Notice(t.errors.embeddingLoadFailed);
+			// Update chat views to reflect error state
+			this.updateChatViewStatus();
+		}
+	}
+
+	/**
+	 * Update the status bar of all open ChatView instances.
+	 * Called after embedding initialization completes or fails.
+	 */
+	private updateChatViewStatus(): void {
+		const chatViews = this.app.workspace.getLeavesOfType(VIEW_TYPE_CHAT);
+		for (const leaf of chatViews) {
+			try {
+				const view = leaf.view;
+				if (view && 'updateStatus' in view && typeof view.updateStatus === 'function') {
+					view.updateStatus();
+				}
+			} catch (error) {
+				logger.error(
+					'Failed to update ChatView status:',
+					error instanceof Error ? error : undefined
+				);
+			}
 		}
 	}
 
