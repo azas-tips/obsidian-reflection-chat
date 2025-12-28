@@ -376,18 +376,28 @@ export class SettingsTab extends PluginSettingTab {
 			// Chat/Summary models
 			this.modelOptions = models
 				.filter((model) => {
-					// Filter streaming-capable models
+					// Filter major LLM providers
+					const id = model.id.toLowerCase();
 					return (
-						model.id.includes('claude') ||
-						model.id.includes('gpt') ||
-						model.id.includes('gemini')
+						id.includes('claude') ||
+						id.includes('gpt') ||
+						id.includes('gemini') ||
+						id.includes('grok') ||
+						id.includes('deepseek') ||
+						id.includes('qwen') ||
+						id.includes('glm')
 					);
+				})
+				.sort((a, b) => {
+					// Sort by provider (first part of model ID)
+					const providerA = a.id.split('/')[0] || '';
+					const providerB = b.id.split('/')[0] || '';
+					return providerA.localeCompare(providerB);
 				})
 				.map((model) => ({
 					value: model.id,
 					label: model.name || model.id,
-				}))
-				.slice(0, 20);
+				}));
 
 			// Embedding models
 			this.embeddingModelOptions = models
