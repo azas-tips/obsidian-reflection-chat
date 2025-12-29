@@ -243,6 +243,41 @@ export interface ValueProfile {
 	tensions: string[];
 }
 
+// Coach Character Types
+/**
+ * Coach speaking tone
+ * - formal: Polite, professional language
+ * - casual: Relaxed, friendly language
+ * - friendly: Warm, approachable language
+ */
+export type CoachTone = 'formal' | 'casual' | 'friendly';
+
+/**
+ * Coach strictness level
+ * - gentle: Supportive, nurturing approach
+ * - balanced: Mix of support and challenge
+ * - strict: Direct, demanding approach
+ */
+export type CoachStrictness = 'gentle' | 'balanced' | 'strict';
+
+/**
+ * Coach Character definition
+ */
+export interface CoachCharacter {
+	/** Unique identifier */
+	id: string;
+	/** Display name (localized) */
+	name: string;
+	/** Speaking tone */
+	tone: CoachTone;
+	/** Strictness level */
+	strictness: CoachStrictness;
+	/** Additional personality prompt */
+	personalityPrompt: string;
+	/** Whether this is a preset (true) or custom (false) character */
+	isPreset: boolean;
+}
+
 // Plugin Settings
 export interface PluginSettings {
 	// API
@@ -262,6 +297,10 @@ export interface PluginSettings {
 	// Prompt
 	systemPrompt: string;
 
+	// Coach Character
+	selectedCharacterId: string;
+	customCharacters: CoachCharacter[];
+
 	// Other
 	language: 'ja' | 'en';
 	autoIndex: boolean;
@@ -279,6 +318,8 @@ export const DEFAULT_SETTINGS: PluginSettings = {
 	contextWindowDays: 7,
 	maxSemanticResults: 5,
 	systemPrompt: '',
+	selectedCharacterId: 'carl',
+	customCharacters: [],
 	language: 'ja',
 	autoIndex: true,
 };

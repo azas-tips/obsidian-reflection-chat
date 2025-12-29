@@ -1,8 +1,10 @@
-import { App, PluginSettingTab, Setting, Notice } from 'obsidian';
+import { App, PluginSettingTab, Setting, Notice, Modal } from 'obsidian';
 import type ReflectionChatPlugin from '../main';
 import { getTranslations, setLanguage, type Language } from '../i18n';
 import { validateFolderPath } from '../utils/sanitize';
 import { logger } from '../utils/logger';
+import type { CoachCharacter, CoachTone, CoachStrictness } from '../types';
+import { getPresetCharacters, generateCustomCharacterId } from '../core/CoachCharacter';
 
 export class SettingsTab extends PluginSettingTab {
 	plugin: ReflectionChatPlugin;
@@ -251,6 +253,78 @@ export class SettingsTab extends PluginSettingTab {
 					})
 			);
 
+		// Coach Character Settings
+		containerEl.createEl('h3', { text: t.coach.settings.heading });
+
+		// Get all characters (presets + custom)
+		const presets = getPresetCharacters();
+		const allCharacters = [...presets, ...this.plugin.settings.customCharacters];
+
+		new Setting(containerEl)
+			.setName(t.coach.settings.character)
+			.setDesc(t.coach.settings.characterDesc)
+			.addDropdown((dropdown) => {
+				for (const char of allCharacters) {
+					const label = char.isPreset
+						? `${char.name} (${t.coach.tones[char.tone]}, ${t.coach.strictness[char.strictness]})`
+						: `✨ ${char.name}`;
+					dropdown.addOption(char.id, label);
+				}
+				dropdown.setValue(this.plugin.settings.selectedCharacterId);
+				dropdown.onChange(async (value) => {
+					this.plugin.settings.selectedCharacterId = value;
+					await this.plugin.saveSettings();
+				});
+			});
+
+		// Create custom character button
+		new Setting(containerEl).addButton((button) =>
+			button.setButtonText(t.coach.settings.createCustom).onClick(() => {
+				new CustomCharacterModal(this.app, this.plugin, null, async () => {
+					await this.display();
+				}).open();
+			})
+		);
+
+		// List custom characters with edit/delete buttons
+		for (const customChar of this.plugin.settings.customCharacters) {
+			new Setting(containerEl)
+				.setName(`✨ ${customChar.name}`)
+				.setDesc(
+					`${t.coach.tones[customChar.tone]} / ${t.coach.strictness[customChar.strictness]}`
+				)
+				.addButton((button) =>
+					button.setButtonText(t.coach.settings.editCustom).onClick(() => {
+						new CustomCharacterModal(
+							this.app,
+							this.plugin,
+							customChar,
+							async () => {
+								await this.display();
+							}
+						).open();
+					})
+				)
+				.addButton((button) =>
+					button
+						.setButtonText(t.coach.settings.deleteCustom)
+						.setWarning()
+						.onClick(async () => {
+							// Remove from custom characters
+							this.plugin.settings.customCharacters =
+								this.plugin.settings.customCharacters.filter(
+									(c) => c.id !== customChar.id
+								);
+							// If this was the selected character, reset to default
+							if (this.plugin.settings.selectedCharacterId === customChar.id) {
+								this.plugin.settings.selectedCharacterId = 'carl';
+							}
+							await this.plugin.saveSettings();
+							await this.display();
+						})
+				);
+		}
+
 		// Prompt Settings
 		containerEl.createEl('h3', { text: t.settings.prompts.heading });
 
@@ -415,5 +489,139 @@ export class SettingsTab extends PluginSettingTab {
 				this.isFetchingModels = false;
 			}
 		}
+	}
+}
+
+/**
+ * Modal for creating/editing custom coach characters
+ */
+class CustomCharacterModal extends Modal {
+	private plugin: ReflectionChatPlugin;
+	private character: CoachCharacter | null;
+	private onSave: () => Promise<void>;
+
+	private nameValue: string;
+	private toneValue: CoachTone;
+	private strictnessValue: CoachStrictness;
+	private personalityValue: string;
+
+	constructor(
+		app: App,
+		plugin: ReflectionChatPlugin,
+		character: CoachCharacter | null,
+		onSave: () => Promise<void>
+	) {
+		super(app);
+		this.plugin = plugin;
+		this.character = character;
+		this.onSave = onSave;
+
+		// Initialize values
+		this.nameValue = character?.name || '';
+		this.toneValue = character?.tone || 'friendly';
+		this.strictnessValue = character?.strictness || 'balanced';
+		this.personalityValue = character?.personalityPrompt || '';
+	}
+
+	onOpen(): void {
+		const { contentEl } = this;
+		const t = getTranslations();
+
+		contentEl.createEl('h2', {
+			text: this.character ? t.coach.settings.editCustom : t.coach.settings.createCustom,
+		});
+
+		// Name
+		new Setting(contentEl).setName(t.coach.settings.name).addText((text) => {
+			text.setValue(this.nameValue).onChange((value) => {
+				this.nameValue = value;
+			});
+		});
+
+		// Tone
+		new Setting(contentEl).setName(t.coach.settings.tone).addDropdown((dropdown) => {
+			dropdown.addOption('formal', t.coach.tones.formal);
+			dropdown.addOption('casual', t.coach.tones.casual);
+			dropdown.addOption('friendly', t.coach.tones.friendly);
+			dropdown.setValue(this.toneValue);
+			dropdown.onChange((value) => {
+				this.toneValue = value as CoachTone;
+			});
+		});
+
+		// Strictness
+		new Setting(contentEl).setName(t.coach.settings.strictness).addDropdown((dropdown) => {
+			dropdown.addOption('gentle', t.coach.strictness.gentle);
+			dropdown.addOption('balanced', t.coach.strictness.balanced);
+			dropdown.addOption('strict', t.coach.strictness.strict);
+			dropdown.setValue(this.strictnessValue);
+			dropdown.onChange((value) => {
+				this.strictnessValue = value as CoachStrictness;
+			});
+		});
+
+		// Personality Prompt
+		new Setting(contentEl)
+			.setName(t.coach.settings.personalityPrompt)
+			.addTextArea((text) => {
+				text.setPlaceholder(t.coach.settings.personalityPromptPlaceholder)
+					.setValue(this.personalityValue)
+					.onChange((value) => {
+						this.personalityValue = value;
+					});
+				text.inputEl.rows = 5;
+				text.inputEl.style.width = '100%';
+			});
+
+		// Buttons
+		new Setting(contentEl)
+			.addButton((button) =>
+				button
+					.setButtonText(t.coach.settings.save)
+					.setCta()
+					.onClick(async () => {
+						if (!this.nameValue.trim()) {
+							return;
+						}
+
+						const newCharacter: CoachCharacter = {
+							id: this.character?.id || generateCustomCharacterId(),
+							name: this.nameValue.trim(),
+							tone: this.toneValue,
+							strictness: this.strictnessValue,
+							personalityPrompt: this.personalityValue,
+							isPreset: false,
+						};
+
+						if (this.character) {
+							// Update existing
+							const index = this.plugin.settings.customCharacters.findIndex(
+								(c) => c.id === this.character!.id
+							);
+							if (index >= 0) {
+								this.plugin.settings.customCharacters[index] = newCharacter;
+							}
+						} else {
+							// Add new
+							this.plugin.settings.customCharacters.push(newCharacter);
+							// Auto-select the new character
+							this.plugin.settings.selectedCharacterId = newCharacter.id;
+						}
+
+						await this.plugin.saveSettings();
+						await this.onSave();
+						this.close();
+					})
+			)
+			.addButton((button) =>
+				button.setButtonText(t.coach.settings.cancel).onClick(() => {
+					this.close();
+				})
+			);
+	}
+
+	onClose(): void {
+		const { contentEl } = this;
+		contentEl.empty();
 	}
 }

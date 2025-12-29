@@ -11,6 +11,7 @@ import { VectorStore } from './infrastructure/VectorStore';
 import { NoteIndexer } from './infrastructure/NoteIndexer';
 import { ContextRetriever } from './core/ContextRetriever';
 import { setLanguage, getTranslations } from './i18n';
+import { getCharacterById, buildCharacterPrompt } from './core/CoachCharacter';
 import { logger } from './utils/logger';
 
 export default class ReflectionChatPlugin extends Plugin {
@@ -96,7 +97,8 @@ export default class ReflectionChatPlugin extends Plugin {
 			this.openRouterClient,
 			this.settings.chatModel,
 			this.settings.summaryModel,
-			this.settings.systemPrompt
+			this.settings.systemPrompt,
+			this.getCharacterPrompt()
 		);
 
 		// Initialize Session Manager
@@ -274,6 +276,13 @@ export default class ReflectionChatPlugin extends Plugin {
 				typeof settings.autoIndex === 'boolean'
 					? settings.autoIndex
 					: DEFAULT_SETTINGS.autoIndex,
+			selectedCharacterId:
+				typeof settings.selectedCharacterId === 'string'
+					? settings.selectedCharacterId
+					: DEFAULT_SETTINGS.selectedCharacterId,
+			customCharacters: Array.isArray(settings.customCharacters)
+				? settings.customCharacters
+				: DEFAULT_SETTINGS.customCharacters,
 		};
 	}
 
@@ -313,7 +322,8 @@ export default class ReflectionChatPlugin extends Plugin {
 			this.chatEngine.updateSettings(
 				this.settings.chatModel,
 				this.settings.summaryModel,
-				this.settings.systemPrompt
+				this.settings.systemPrompt,
+				this.getCharacterPrompt()
 			);
 		}
 		if (this.sessionManager) {
@@ -342,6 +352,20 @@ export default class ReflectionChatPlugin extends Plugin {
 				this.settings.maxSemanticResults
 			);
 		}
+	}
+
+	/**
+	 * Get the character prompt for the selected coach character
+	 */
+	private getCharacterPrompt(): string {
+		const character = getCharacterById(
+			this.settings.selectedCharacterId,
+			this.settings.customCharacters
+		);
+		if (character) {
+			return buildCharacterPrompt(character);
+		}
+		return '';
 	}
 
 	async activateView() {

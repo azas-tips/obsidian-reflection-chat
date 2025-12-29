@@ -17,17 +17,20 @@ export class ChatEngine {
 	private chatModel: string;
 	private summaryModel: string;
 	private systemPrompt: string;
+	private characterPrompt: string;
 
 	constructor(
 		client: OpenRouterClient,
 		chatModel: string,
 		summaryModel: string,
-		systemPrompt: string
+		systemPrompt: string,
+		characterPrompt: string = ''
 	) {
 		this.client = client;
 		this.chatModel = chatModel;
 		this.summaryModel = summaryModel;
 		this.systemPrompt = systemPrompt;
+		this.characterPrompt = characterPrompt;
 	}
 
 	/**
@@ -35,11 +38,18 @@ export class ChatEngine {
 	 * @param chatModel - Model ID for chat completions
 	 * @param summaryModel - Model ID for generating summaries
 	 * @param systemPrompt - Custom system prompt (empty means use default)
+	 * @param characterPrompt - Character-specific prompt to append
 	 */
-	updateSettings(chatModel: string, summaryModel: string, systemPrompt: string): void {
+	updateSettings(
+		chatModel: string,
+		summaryModel: string,
+		systemPrompt: string,
+		characterPrompt: string = ''
+	): void {
 		this.chatModel = chatModel;
 		this.summaryModel = summaryModel;
 		this.systemPrompt = systemPrompt;
+		this.characterPrompt = characterPrompt;
 	}
 
 	/**
@@ -187,6 +197,11 @@ export class ChatEngine {
 				const priorityLabel = t.goal.priority[goal.priority] || goal.priority;
 				prompt += `- [[${goal.name}]] (${typeLabel}, ${priorityLabel}): ${goal.description}\n`;
 			}
+		}
+
+		// Add character-specific prompt
+		if (this.characterPrompt) {
+			prompt += `\n\n${this.characterPrompt}`;
 		}
 
 		return prompt;

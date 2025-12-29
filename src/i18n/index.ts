@@ -233,6 +233,54 @@ export interface Translations {
 		documentPrefix: string;
 	};
 
+	// Coach Character
+	coach: {
+		settings: {
+			heading: string;
+			character: string;
+			characterDesc: string;
+			customCharacter: string;
+			createCustom: string;
+			editCustom: string;
+			deleteCustom: string;
+			name: string;
+			tone: string;
+			strictness: string;
+			personalityPrompt: string;
+			personalityPromptPlaceholder: string;
+			save: string;
+			cancel: string;
+		};
+		tones: {
+			formal: string;
+			casual: string;
+			friendly: string;
+		};
+		strictness: {
+			gentle: string;
+			balanced: string;
+			strict: string;
+		};
+		presets: {
+			carl: { name: string; personality: string };
+			al: { name: string; personality: string };
+			viktor: { name: string; personality: string };
+			jung: { name: string; personality: string };
+			hayao: { name: string; personality: string };
+			marshall: { name: string; personality: string };
+		};
+		tonePrompts: {
+			formal: string;
+			casual: string;
+			friendly: string;
+		};
+		strictnessPrompts: {
+			gentle: string;
+			balanced: string;
+			strict: string;
+		};
+	};
+
 	// Prompts
 	prompts: {
 		system: string;
