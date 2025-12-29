@@ -9,6 +9,7 @@ import {
 import { getTranslations, getAllTranslations } from '../i18n';
 import { escapeRegex } from '../utils/sanitize';
 import { logger } from '../utils/logger';
+import { OpenRouterClient } from '../infrastructure/OpenRouterClient';
 
 export type ReportType = 'weekly' | 'monthly';
 export type ReportPeriod = 'rolling' | 'last';
@@ -16,6 +17,13 @@ export type ReportPeriod = 'rolling' | 'last';
 export interface ReportCommand {
 	type: ReportType;
 	period: ReportPeriod;
+}
+
+export interface CoachingFeedback {
+	highlights: string;
+	patterns: string[];
+	advice: string[];
+	questions: string[];
 }
 
 export interface SessionData {
@@ -47,19 +55,32 @@ export interface ReportData {
 	allOpenQuestions: string[];
 	pendingActions: NextAction[];
 	allInsights: string[];
+	coachingFeedback?: CoachingFeedback;
 }
 
 export class ReportGenerator {
 	private app: App;
 	private journalFolder: string;
+	private openRouterClient: OpenRouterClient;
+	private summaryModel: string;
 
-	constructor(app: App, journalFolder: string) {
+	constructor(
+		app: App,
+		journalFolder: string,
+		openRouterClient: OpenRouterClient,
+		summaryModel: string
+	) {
 		this.app = app;
 		this.journalFolder = journalFolder;
+		this.openRouterClient = openRouterClient;
+		this.summaryModel = summaryModel;
 	}
 
-	updateSettings(journalFolder: string): void {
+	updateSettings(journalFolder: string, summaryModel?: string): void {
 		this.journalFolder = journalFolder;
+		if (summaryModel) {
+			this.summaryModel = summaryModel;
+		}
 	}
 
 	/**
@@ -379,6 +400,87 @@ export class ReportGenerator {
 	}
 
 	/**
+	 * Generate coaching feedback using LLM
+	 */
+	async generateCoachingFeedback(data: ReportData): Promise<CoachingFeedback | null> {
+		if (!this.openRouterClient.isConfigured()) {
+			logger.warn('OpenRouter not configured, skipping coaching feedback');
+			return null;
+		}
+
+		const t = getTranslations();
+
+		// Build the prompt with session data
+		const categoryBreakdown = Object.entries(data.categoryBreakdown)
+			.map(([cat, count]) => `- ${cat}: ${count}回`)
+			.join('\n');
+
+		const sessionSummaries = data.sessions
+			.map((s) => `- ${s.date}: ${s.summary || '(要約なし)'}`)
+			.join('\n');
+
+		const insights =
+			data.allInsights.length > 0
+				? data.allInsights.map((i) => `- ${i}`).join('\n')
+				: '(なし)';
+
+		const openQuestions =
+			data.allOpenQuestions.length > 0
+				? data.allOpenQuestions.map((q) => `- ${q}`).join('\n')
+				: '(なし)';
+
+		const pendingActions =
+			data.pendingActions.length > 0
+				? data.pendingActions.map((a) => `- ${a.action}`).join('\n')
+				: '(なし)';
+
+		const prompt = t.prompts.coachingFeedback
+			.replace('{startDate}', data.startDate)
+			.replace('{endDate}', data.endDate)
+			.replace('{sessionCount}', String(data.sessions.length))
+			.replace('{categoryBreakdown}', categoryBreakdown || '(なし)')
+			.replace('{sessionSummaries}', sessionSummaries || '(なし)')
+			.replace('{insights}', insights)
+			.replace('{openQuestions}', openQuestions)
+			.replace('{pendingActions}', pendingActions);
+
+		try {
+			const response = await this.openRouterClient.complete(
+				[{ role: 'user', content: prompt }],
+				{ model: this.summaryModel, maxTokens: 2048 }
+			);
+
+			// Extract JSON from response
+			const jsonMatch = response.match(/\{[\s\S]*\}/);
+			if (!jsonMatch) {
+				logger.error('No JSON found in coaching feedback response');
+				return null;
+			}
+
+			const parsed = JSON.parse(jsonMatch[0]);
+
+			return {
+				highlights: typeof parsed.highlights === 'string' ? parsed.highlights : '',
+				patterns: Array.isArray(parsed.patterns)
+					? parsed.patterns.filter((p: unknown) => typeof p === 'string')
+					: [],
+				advice: Array.isArray(parsed.advice)
+					? parsed.advice.filter((a: unknown) => typeof a === 'string')
+					: [],
+				questions: Array.isArray(parsed.questions)
+					? parsed.questions.filter((q: unknown) => typeof q === 'string')
+					: [],
+			};
+		} catch (error) {
+			logger.error(
+				'Failed to generate coaching feedback:',
+				error instanceof Error ? error : undefined
+			);
+			return null;
+		}
+	}
+
+	/**
 	 * Format report as markdown
 	 */
 	formatReport(data: ReportData): string {
@@ -390,8 +492,55 @@ export class ReportGenerator {
 		lines.push(`# 📊 ${typeLabel} (${data.startDate} - ${data.endDate})`);
 		lines.push('');
 
+		// Coaching feedback section (if available)
+		if (data.coachingFeedback) {
+			lines.push(`## 🎯 ${t.report.coachFeedback}`);
+			lines.push('');
+
+			// Highlights
+			if (data.coachingFeedback.highlights) {
+				lines.push(`### ${t.report.highlights}`);
+				lines.push(data.coachingFeedback.highlights);
+				lines.push('');
+			}
+
+			// Patterns
+			if (data.coachingFeedback.patterns.length > 0) {
+				lines.push(`### ${t.report.patterns}`);
+				for (const pattern of data.coachingFeedback.patterns) {
+					lines.push(`- ${pattern}`);
+				}
+				lines.push('');
+			}
+
+			// Advice
+			if (data.coachingFeedback.advice.length > 0) {
+				lines.push(`### ${t.report.advice}`);
+				for (const advice of data.coachingFeedback.advice) {
+					lines.push(`- ${advice}`);
+				}
+				lines.push('');
+			}
+
+			// Questions
+			if (data.coachingFeedback.questions.length > 0) {
+				lines.push(`### ${t.report.questions}`);
+				for (const question of data.coachingFeedback.questions) {
+					lines.push(`- ${question}`);
+				}
+				lines.push('');
+			}
+
+			lines.push('---');
+			lines.push('');
+		}
+
+		// Statistics Summary header
+		lines.push(`## 📈 ${t.report.statisticsSummary}`);
+		lines.push('');
+
 		// Session overview
-		lines.push(`## ${t.report.sessionOverview}`);
+		lines.push(`### ${t.report.sessionOverview}`);
 		lines.push(`- ${t.report.sessionCount}: ${data.sessions.length}`);
 
 		// Category breakdown
@@ -527,6 +676,15 @@ export class ReportGenerator {
 		const { startDate, endDate } = this.getDateRange(command);
 		const sessions = await this.fetchSessions(startDate, endDate);
 		const reportData = this.aggregateSessions(command, sessions, startDate, endDate);
+
+		// Generate coaching feedback if there are sessions
+		if (sessions.length > 0) {
+			const coachingFeedback = await this.generateCoachingFeedback(reportData);
+			if (coachingFeedback) {
+				reportData.coachingFeedback = coachingFeedback;
+			}
+		}
+
 		const content = this.formatReport(reportData);
 		const filePath = await this.saveReport(command, content);
 

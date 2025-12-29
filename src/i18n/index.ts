@@ -218,6 +218,13 @@ export interface Translations {
 		cancel: string;
 		noSessions: string;
 		invalidCommand: string;
+		coachFeedback: string;
+		highlights: string;
+		patterns: string;
+		advice: string;
+		questions: string;
+		statisticsSummary: string;
+		generatingFeedback: string;
 	};
 
 	// Embedding
@@ -230,6 +237,7 @@ export interface Translations {
 	prompts: {
 		system: string;
 		summary: string;
+		coachingFeedback: string;
 	};
 }
 

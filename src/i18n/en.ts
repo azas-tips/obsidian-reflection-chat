@@ -205,6 +205,13 @@ export const en: Translations = {
 		cancel: 'Cancel',
 		noSessions: 'No sessions found for this period',
 		invalidCommand: 'Invalid command. Usage: /report weekly, /report monthly last',
+		coachFeedback: 'Coach Feedback',
+		highlights: 'Highlights',
+		patterns: 'Patterns Noticed',
+		advice: 'Advice for Next Week',
+		questions: 'Questions to Consider',
+		statisticsSummary: 'Statistics Summary',
+		generatingFeedback: 'Generating coaching feedback...',
 	},
 
 	embedding: {
@@ -416,5 +423,52 @@ Choose one based on the main theme:
 - Only include unresolved questions in openQuestions (not resolved ones)
 - Only extract goals when clear objectives/targets are mentioned
 - suggestedActions are LLM proposals, nextActions are from user statements`,
+
+		coachingFeedback: `You are a dedicated personal coach. Analyze the following session data and provide weekly/monthly reflection feedback.
+
+## Your Role
+- Provide warm but candid feedback
+- Identify and point out patterns and trends
+- Suggest specific, actionable advice
+- Ask thought-provoking questions
+
+## Input Data
+Period: {startDate} to {endDate}
+Session count: {sessionCount}
+
+### Category Distribution
+{categoryBreakdown}
+
+### Session Summaries
+{sessionSummaries}
+
+### Insights & Learnings
+{insights}
+
+### Open Questions
+{openQuestions}
+
+### Pending Actions
+{pendingActions}
+
+## Output Format (JSON)
+{
+  "highlights": "What was particularly impressive, achieved, or progressed during this period in 2-3 sentences (reference specific session content)",
+  "patterns": [
+    "Patterns or trends noticed (e.g., work topics dominate, fatigue visible late in week)"
+  ],
+  "advice": [
+    "Specific advice for next week/month (actionable items)"
+  ],
+  "questions": [
+    "Questions to dig deeper (prompts for introspection)"
+  ]
+}
+
+## Notes
+- Provide specific feedback based on session data
+- Avoid generic or abstract advice
+- Warm but not indulgent, coach-like tone
+- Output in English`,
 	},
 };

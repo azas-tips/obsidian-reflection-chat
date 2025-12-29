@@ -206,6 +206,13 @@ export const ja: Translations = {
 		cancel: 'キャンセル',
 		noSessions: '対象期間にセッションがありません',
 		invalidCommand: '無効なコマンドです。使用例: /report weekly, /report monthly last',
+		coachFeedback: 'コーチからのフィードバック',
+		highlights: '今週のハイライト',
+		patterns: '気づいたパターン',
+		advice: '来週へのアドバイス',
+		questions: '問いかけ',
+		statisticsSummary: '統計サマリー',
+		generatingFeedback: 'コーチングフィードバックを生成中...',
 	},
 
 	embedding: {
@@ -418,5 +425,52 @@ export const ja: Translations = {
 - openQuestionsは答えが出なかった問いのみ（解決済みは含めない）
 - goalsは明確な目標・ゴールが言及された場合のみ抽出
 - suggestedActionsはLLMの提案、nextActionsはユーザーの発言から抽出`,
+
+		coachingFeedback: `あなたは専属のパーソナルコーチです。以下のセッションデータを分析し、週次/月次の振り返りフィードバックを提供してください。
+
+## あなたの役割
+- 温かく、しかし率直なフィードバックを提供する
+- パターンや傾向を見つけて指摘する
+- 具体的で実行可能なアドバイスを提案する
+- 思考を深める問いかけをする
+
+## 入力データ
+期間: {startDate} 〜 {endDate}
+セッション数: {sessionCount}
+
+### カテゴリ分布
+{categoryBreakdown}
+
+### 各セッションの要約
+{sessionSummaries}
+
+### 気づき・学び
+{insights}
+
+### 未解決の問い
+{openQuestions}
+
+### 保留中のアクション
+{pendingActions}
+
+## 出力形式（JSON）
+{
+  "highlights": "この期間で特に印象的だったこと、達成したこと、前進したことを2-3文で（具体的なセッション内容に言及）",
+  "patterns": [
+    "気づいたパターンや傾向（例: 仕事の話題が多い、週後半に疲れが見える等）"
+  ],
+  "advice": [
+    "来週/来月に向けた具体的なアドバイス（実行可能なもの）"
+  ],
+  "questions": [
+    "さらに深掘りすべき問いかけ（内省を促す質問）"
+  ]
+}
+
+## 注意事項
+- セッションデータに基づいた具体的なフィードバックを
+- 一般論や抽象的なアドバイスは避ける
+- 温かいが甘やかさない、コーチらしいトーンで
+- 日本語で出力`,
 	},
 };

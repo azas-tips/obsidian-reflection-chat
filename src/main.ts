@@ -107,7 +107,12 @@ export default class ReflectionChatPlugin extends Plugin {
 		);
 
 		// Initialize Report Generator
-		this.reportGenerator = new ReportGenerator(this.app, this.settings.journalFolder);
+		this.reportGenerator = new ReportGenerator(
+			this.app,
+			this.settings.journalFolder,
+			this.openRouterClient,
+			this.settings.summaryModel
+		);
 
 		// Initialize Embedder with OpenRouter API key and model
 		this.embedder = new Embedder(this.settings.openRouterApiKey, this.settings.embeddingModel);
@@ -318,7 +323,10 @@ export default class ReflectionChatPlugin extends Plugin {
 			);
 		}
 		if (this.reportGenerator) {
-			this.reportGenerator.updateSettings(this.settings.journalFolder);
+			this.reportGenerator.updateSettings(
+				this.settings.journalFolder,
+				this.settings.summaryModel
+			);
 		}
 		if (this.noteIndexer) {
 			this.noteIndexer.updateSettings(
