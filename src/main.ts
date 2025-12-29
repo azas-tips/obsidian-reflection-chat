@@ -11,7 +11,8 @@ import { VectorStore } from './infrastructure/VectorStore';
 import { NoteIndexer } from './infrastructure/NoteIndexer';
 import { ContextRetriever } from './core/ContextRetriever';
 import { setLanguage, getTranslations } from './i18n';
-import { getCharacterById, buildCharacterPrompt } from './core/CoachCharacter';
+import { getCharacterById, buildCharacterPrompt, getPresetCharacters } from './core/CoachCharacter';
+import type { CoachCharacter } from './types';
 import { logger } from './utils/logger';
 
 export default class ReflectionChatPlugin extends Plugin {
@@ -230,9 +231,46 @@ export default class ReflectionChatPlugin extends Plugin {
 	}
 
 	/**
+	 * Validate a single CoachCharacter object
+	 */
+	private isValidCoachCharacter(char: unknown): char is CoachCharacter {
+		if (typeof char !== 'object' || char === null) return false;
+		const c = char as Record<string, unknown>;
+		return (
+			typeof c.id === 'string' &&
+			typeof c.name === 'string' &&
+			(c.tone === 'formal' || c.tone === 'casual' || c.tone === 'friendly') &&
+			(c.strictness === 'gentle' || c.strictness === 'balanced' || c.strictness === 'strict') &&
+			typeof c.personalityPrompt === 'string' &&
+			typeof c.isPreset === 'boolean'
+		);
+	}
+
+	/**
+	 * Check if a character ID exists in presets or custom characters
+	 */
+	private isValidCharacterId(id: string, customCharacters: CoachCharacter[]): boolean {
+		const presetIds = getPresetCharacters().map((c) => c.id);
+		const customIds = customCharacters.map((c) => c.id);
+		return presetIds.includes(id) || customIds.includes(id);
+	}
+
+	/**
 	 * Validate and sanitize loaded settings, falling back to defaults for invalid values
 	 */
 	private validateSettings(settings: PluginSettings): PluginSettings {
+		// First validate customCharacters
+		const validCustomCharacters = Array.isArray(settings.customCharacters)
+			? settings.customCharacters.filter((c) => this.isValidCoachCharacter(c))
+			: DEFAULT_SETTINGS.customCharacters;
+
+		// Then validate selectedCharacterId against valid characters
+		const selectedCharacterId =
+			typeof settings.selectedCharacterId === 'string' &&
+			this.isValidCharacterId(settings.selectedCharacterId, validCustomCharacters)
+				? settings.selectedCharacterId
+				: DEFAULT_SETTINGS.selectedCharacterId;
+
 		return {
 			openRouterApiKey:
 				typeof settings.openRouterApiKey === 'string' ? settings.openRouterApiKey : '',
@@ -276,13 +314,8 @@ export default class ReflectionChatPlugin extends Plugin {
 				typeof settings.autoIndex === 'boolean'
 					? settings.autoIndex
 					: DEFAULT_SETTINGS.autoIndex,
-			selectedCharacterId:
-				typeof settings.selectedCharacterId === 'string'
-					? settings.selectedCharacterId
-					: DEFAULT_SETTINGS.selectedCharacterId,
-			customCharacters: Array.isArray(settings.customCharacters)
-				? settings.customCharacters
-				: DEFAULT_SETTINGS.customCharacters,
+			selectedCharacterId,
+			customCharacters: validCustomCharacters,
 		};
 	}
 

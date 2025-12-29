@@ -235,6 +235,10 @@ export const en: Translations = {
 			personalityPromptPlaceholder: 'Describe unique behaviors for this character...',
 			save: 'Save',
 			cancel: 'Cancel',
+			nameRequired: 'Please enter a name',
+			deleteConfirm: 'Are you sure you want to delete this character?',
+			updateFailed: 'Failed to update character',
+			duplicateName: 'A character with this name already exists',
 		},
 		tones: {
 			formal: 'Formal',
@@ -290,6 +294,13 @@ export const en: Translations = {
 				'Show empathy while also being direct when needed. Balance support with challenge.',
 			strict:
 				'Give direct, candid feedback. Don\'t accept excuses and maintain high standards.',
+		},
+		promptTemplate: {
+			header: 'Coach Character',
+			nameIntro: 'Your name is "{name}".',
+			toneHeader: 'Tone',
+			attitudeHeader: 'Attitude',
+			personalityHeader: 'Personality',
 		},
 	},
 

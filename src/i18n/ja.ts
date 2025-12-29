@@ -237,6 +237,10 @@ export const ja: Translations = {
 			personalityPromptPlaceholder: 'このキャラクター固有の振る舞いを記述...',
 			save: '保存',
 			cancel: 'キャンセル',
+			nameRequired: '名前を入力してください',
+			deleteConfirm: 'このキャラクターを削除しますか？',
+			updateFailed: 'キャラクターの更新に失敗しました',
+			duplicateName: '同じ名前のキャラクターが既に存在します',
 		},
 		tones: {
 			formal: 'フォーマル',
@@ -289,6 +293,13 @@ export const ja: Translations = {
 			gentle: '優しく寄り添い、相手のペースを尊重する。批判は避け、肯定的なフィードバックを心がける。',
 			balanced: '共感しつつも、必要に応じて率直な意見を伝える。サポートとチャレンジのバランスを取る。',
 			strict: '直接的で率直なフィードバックを与える。言い訳を許さず、高い基準を求める。',
+		},
+		promptTemplate: {
+			header: 'コーチのキャラクター',
+			nameIntro: 'あなたの名前は「{name}」です。',
+			toneHeader: '口調',
+			attitudeHeader: '態度',
+			personalityHeader: '性格',
 		},
 	},
 

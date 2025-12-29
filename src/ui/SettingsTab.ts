@@ -310,6 +310,10 @@ export class SettingsTab extends PluginSettingTab {
 						.setButtonText(t.coach.settings.deleteCustom)
 						.setWarning()
 						.onClick(async () => {
+							// Confirm before deleting
+							if (!window.confirm(t.coach.settings.deleteConfirm)) {
+								return;
+							}
 							// Remove from custom characters
 							this.plugin.settings.customCharacters =
 								this.plugin.settings.customCharacters.filter(
@@ -580,13 +584,28 @@ class CustomCharacterModal extends Modal {
 					.setButtonText(t.coach.settings.save)
 					.setCta()
 					.onClick(async () => {
-						if (!this.nameValue.trim()) {
+						const trimmedName = this.nameValue.trim();
+						if (!trimmedName) {
+							new Notice(t.coach.settings.nameRequired);
+							return;
+						}
+
+						// Check for duplicate names
+						const presets = getPresetCharacters();
+						const existingNames = [
+							...presets.map((c) => c.name),
+							...this.plugin.settings.customCharacters
+								.filter((c) => c.id !== this.character?.id)
+								.map((c) => c.name),
+						];
+						if (existingNames.includes(trimmedName)) {
+							new Notice(t.coach.settings.duplicateName);
 							return;
 						}
 
 						const newCharacter: CoachCharacter = {
 							id: this.character?.id || generateCustomCharacterId(),
-							name: this.nameValue.trim(),
+							name: trimmedName,
 							tone: this.toneValue,
 							strictness: this.strictnessValue,
 							personalityPrompt: this.personalityValue,
@@ -600,6 +619,11 @@ class CustomCharacterModal extends Modal {
 							);
 							if (index >= 0) {
 								this.plugin.settings.customCharacters[index] = newCharacter;
+							} else {
+								// Character was deleted while modal was open
+								new Notice(t.coach.settings.updateFailed);
+								this.close();
+								return;
 							}
 						} else {
 							// Add new

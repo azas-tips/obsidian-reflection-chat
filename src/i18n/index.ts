@@ -250,6 +250,10 @@ export interface Translations {
 			personalityPromptPlaceholder: string;
 			save: string;
 			cancel: string;
+			nameRequired: string;
+			deleteConfirm: string;
+			updateFailed: string;
+			duplicateName: string;
 		};
 		tones: {
 			formal: string;
@@ -278,6 +282,13 @@ export interface Translations {
 			gentle: string;
 			balanced: string;
 			strict: string;
+		};
+		promptTemplate: {
+			header: string;
+			nameIntro: string;
+			toneHeader: string;
+			attitudeHeader: string;
+			personalityHeader: string;
 		};
 	};
 
