@@ -8,6 +8,7 @@ node_modules/
 .idea/
 *.iml
 .vscode/
+.claude/
 
 # OS
 .DS_Store

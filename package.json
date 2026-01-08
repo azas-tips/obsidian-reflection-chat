@@ -1,6 +1,6 @@
 {
 	"name": "obsidian-reflection-chat",
-	"version": "0.1.14",
+	"version": "0.1.15",
 	"description": "AI coaching conversations that build your personal context graph",
 	"main": "main.js",
 	"scripts": {
