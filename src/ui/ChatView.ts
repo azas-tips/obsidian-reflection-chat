@@ -589,6 +589,12 @@ export class ChatView extends ItemView {
 
 		const t = getTranslations();
 
+		// Check for /help command
+		if (content === '/help') {
+			this.handleHelpCommand();
+			return;
+		}
+
 		// Check for /report command
 		if (content.startsWith('/report')) {
 			await this.handleReportCommand(content);
@@ -675,6 +681,39 @@ export class ChatView extends ItemView {
 			this.isLoading = false;
 			this.updateSendButton();
 		}
+	}
+
+	private handleHelpCommand(): void {
+		if (!this.inputEl) return;
+
+		const t = getTranslations();
+
+		// Clear input
+		this.inputEl.value = '';
+		this.inputEl.style.height = 'auto';
+
+		// Add user message
+		const userMessage: Message = {
+			id: generateId(),
+			role: 'user',
+			content: '/help',
+			timestamp: Date.now(),
+		};
+		this.addMessage(userMessage);
+		this.renderMessages();
+
+		// Build help message
+		const helpContent = `**${t.help.title}**
+
+- ${t.help.commands.help}
+- ${t.help.commands.reportWeekly}
+- ${t.help.commands.reportWeeklyLast}
+- ${t.help.commands.reportMonthly}
+- ${t.help.commands.reportMonthlyLast}
+
+${t.help.tip}`;
+
+		this.renderAssistantMessage(helpContent);
 	}
 
 	private async handleReportCommand(content: string): Promise<void> {

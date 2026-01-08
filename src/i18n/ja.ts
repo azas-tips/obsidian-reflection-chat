@@ -186,6 +186,18 @@ export const ja: Translations = {
 		relatedGoals: 'アクティブなゴール',
 	},
 
+	help: {
+		title: '利用可能なコマンド',
+		commands: {
+			help: '/help - このヘルプを表示',
+			reportWeekly: '/report weekly - 今週の週次レポートを生成',
+			reportWeeklyLast: '/report weekly last - 先週の週次レポートを生成',
+			reportMonthly: '/report monthly - 今月の月次レポートを生成',
+			reportMonthlyLast: '/report monthly last - 先月の月次レポートを生成',
+		},
+		tip: 'ヒント: 通常のメッセージを入力して、AIコーチと会話を始めましょう',
+	},
+
 	report: {
 		weekly: '週次レポート',
 		monthly: '月次レポート',

@@ -185,6 +185,18 @@ export const en: Translations = {
 		relatedGoals: 'Active Goals',
 	},
 
+	help: {
+		title: 'Available Commands',
+		commands: {
+			help: '/help - Show this help',
+			reportWeekly: '/report weekly - Generate weekly report for this week',
+			reportWeeklyLast: '/report weekly last - Generate weekly report for last week',
+			reportMonthly: '/report monthly - Generate monthly report for this month',
+			reportMonthlyLast: '/report monthly last - Generate monthly report for last month',
+		},
+		tip: 'Tip: Enter a regular message to start a conversation with your AI coach',
+	},
+
 	report: {
 		weekly: 'Weekly Report',
 		monthly: 'Monthly Report',

@@ -197,6 +197,19 @@ export interface Translations {
 		relatedGoals: string;
 	};
 
+	// Help
+	help: {
+		title: string;
+		commands: {
+			help: string;
+			reportWeekly: string;
+			reportWeeklyLast: string;
+			reportMonthly: string;
+			reportMonthlyLast: string;
+		};
+		tip: string;
+	};
+
 	// Report
 	report: {
 		weekly: string;
